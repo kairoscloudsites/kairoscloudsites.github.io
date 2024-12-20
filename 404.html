@@ -30,12 +30,19 @@
         </style>
     </head>
     <body>
-        <iframe
-            src="https://app.kairoscloud.io/v2/preview/ZJa90XDzEaS2hPcLhKNb"
-        ></iframe>
+        <iframe id="site-iframe" src="about:blank"></iframe>
     </body>
     <script>
-        let url = window.location.href;
-        alert(url);
+        try {
+            let url = window.location.href;
+            let splitURL = url.split("/");
+            let siteID = splitURL[splitURL.length - 1];
+            document.getElementById("site-iframe").src =
+                `https://app.kairoscloud.io/v2/preview/${siteID}`;
+        } catch (e) {
+            console.log(e + ": Error getting site ID");
+            document.getElementById("site-iframe").src =
+                "https://app.kairoscloud.io/v2/preview/404";
+        }
     </script>
 </html>
