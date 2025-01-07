@@ -1,11 +1,21 @@
-<!-- https://app.kairoscloud.io/v2/preview/ZJa90XDzEaS2hPcLhKNb -->
-
 <!doctype html>
+<title>Kairos Cloud Sites</title>
+<!-- This is a barebones wrapper for all traffic going through sites.kairoscloud.io -->
+<!-- The directory structure looks like this:
+    – sites.kairoscloud.io/404.html (this document)
+        – app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2?baseURL=...
+            – app.kairoscloud.io/v2/preview/...
+    The middle page is a proxy that allows us to skirt around cross-origin issues
+-->
+<link
+    rel="icon"
+    href="https://kairoscloud.github.io/main/Assets/favicon.png"
+    type="image/x-icon"
+/>
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Kairos Cloud Sites</title>
         <style>
             /* Reset margins and padding */
             * {
@@ -20,29 +30,42 @@
             }
 
             iframe {
-                position: absolute;
                 top: 0;
                 left: 0;
                 width: 100%;
-                height: 100%;
+                height: 100vh;
                 border: none; /* Remove iframe border */
             }
         </style>
     </head>
     <body>
-        <iframe id="site-iframe" src="about:blank"></iframe>
+        <iframe id="preview-iframe" src="about:blank"></iframe>
     </body>
     <script>
         try {
-            let url = window.location.href;
-            let splitURL = url.split("/");
-            let siteID = splitURL[splitURL.length - 1];
-            document.getElementById("site-iframe").src =
-                `https://app.kairoscloud.io/v2/preview/${siteID}`;
+            let baseURL = window.location.href;
+            document.getElementById("preview-iframe").src =
+                `https://app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2?baseURL=${customEncodeURIComponent(
+                    baseURL,
+                )}`;
         } catch (e) {
             console.log(e + ": Error getting site ID");
-            document.getElementById("site-iframe").src =
+            document.getElementById("preview-iframe").src =
                 "https://app.kairoscloud.io/v2/preview/404";
         }
+
+        function customEncodeURIComponent(str) {
+            return encodeURIComponent(str)
+                .replace(/!/g, "%21")
+                .replace(/'/g, "%27")
+                .replace(/\(/g, "%28")
+                .replace(/\)/g, "%29")
+                .replace(/\*/g, "%2A");
+        }
+
+        // listen for messages from the iframe
+        window.addEventListener("message", (event) => {
+            console.log(event.data);
+        });
     </script>
 </html>
