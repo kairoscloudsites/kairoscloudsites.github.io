@@ -63,9 +63,26 @@
                 .replace(/\*/g, "%2A");
         }
 
-        // listen for messages from the iframe
+        // Listen for messages from the parent page
         window.addEventListener("message", (event) => {
-            console.log(event.data);
+            const data = event.data;
+            console.log(data);
+
+            // Set the page's title
+            if (data.title) {
+                document.title = data.title;
+            }
+
+            // Set the page's favicon
+            if (data.favicon) {
+                let faviconLink = document.querySelector("link[rel*='icon']");
+                if (!faviconLink) {
+                    faviconLink = document.createElement("link");
+                    faviconLink.rel = "icon";
+                    document.head.appendChild(faviconLink);
+                }
+                faviconLink.href = data.favicon;
+            }
         });
     </script>
 </html>
