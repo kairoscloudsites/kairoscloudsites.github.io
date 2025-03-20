@@ -6,6 +6,7 @@
         – app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2?baseURL=...
             – app.kairoscloud.io/v2/preview/...
     The middle page is a proxy that allows us to skirt around cross-origin issues
+    3/19/25 update: we are doing the same for GHL forms (sites.kairoscloud.io/forms -> cdn.kairoscloud.io/widget/form)
 -->
 <link
     rel="icon"
@@ -44,10 +45,18 @@
     <script>
         try {
             let baseURL = window.location.href;
-            document.getElementById("preview-iframe").src =
-                `https://app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2?baseURL=${customEncodeURIComponent(
-                    baseURL,
-                )}`;
+            let previewIframe = document.getElementById("preview-iframe");
+            if (baseURL.split("/")[3] == "form") {
+                document.getElementById("preview-iframe").src =
+                    `https://cdn.kairoscloud.io/widget/form/WKzNHzEs0vwaY4hOpKLK?baseURL=${customEncodeURIComponent(
+                        baseURL,
+                    )}`;
+            } else {
+                document.getElementById("preview-iframe").src =
+                    `https://app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2?baseURL=${customEncodeURIComponent(
+                        baseURL,
+                    )}`;
+            }
         } catch (e) {
             console.log(e + ": Error getting site ID");
             document.getElementById("preview-iframe").src =
