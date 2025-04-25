@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+        <script src="https://kairoscloud.github.io/main/globalFirebase.js"></script>
+        <link
+            rel="icon"
+            href="https://kairoscloud.github.io/main/Assets/favicon.png"
+            type="image/x-icon"
+        />
+        <title>Report Error | Kairos Cloud</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, Helvetica, Arial, sans-serif;
+                background-color: #ffffff;
+                color: #333;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 2rem;
+            }
+
+            .container {
+                max-width: 600px;
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                gap: 2rem;
+            }
+
+            .logo {
+                width: 35vw;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                align-self: center;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+                text-align: center;
+                font-weight: 500;
+                margin: 0;
+            }
+
+            .formClass {
+                display: flex;
+                flex-direction: column;
+                gap: 1.5rem;
+            }
+
+            label {
+                font-weight: 500;
+                margin-bottom: 0.25rem;
+                display: block;
+            }
+
+            input,
+            textarea {
+                width: 100%;
+                padding: 0.75rem;
+                font-size: 1rem;
+                border: 1px solid #ddd;
+                border-radius: 0.375rem;
+                background-color: #fafafa;
+                transition: border-color 0.2s ease-in-out;
+            }
+
+            input:focus,
+            textarea:focus {
+                outline: none;
+                border-color: #999;
+            }
+
+            button {
+                align-self: flex-start;
+                padding: 0.75rem 1.5rem;
+                font-size: 1rem;
+                color: white;
+                background-color: #3283c3;
+                border: none;
+                border-radius: 0.375rem;
+                cursor: pointer;
+                transition: background-color 0.2s ease-in-out;
+            }
+
+            button:hover {
+                background-color: #1f5e8f;
+            }
+
+            .message {
+                font-size: 1rem;
+                text-align: center;
+                color: #555;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">
+                <img
+                    src="https://kairoscloud.github.io/main/Assets/lax0ZXTk.png"
+                    style="width: 100%; height: auto"
+                />
+            </div>
+            <p>
+                Thanks for reporting! We're constantly trying to improve our
+                software at Kairos Cloud, and we appreciate your feedback.
+            </p>
+            <div class="formClass">
+                <div>
+                    <label for="name">Error ID</label>
+                    <input
+                        type="text"
+                        id="errorID"
+                        value="1234567890"
+                        style="color: #878787"
+                        readonly
+                    />
+                </div>
+                <div>
+                    <label for="name">Name (optional)</label>
+                    <input
+                        type="text"
+                        id="name"
+                        placeholder="Leave blank to be anonymous"
+                    />
+                </div>
+                <div>
+                    <label for="notes">Notes (optional)</label>
+                    <textarea
+                        id="notes"
+                        rows="5"
+                        style="font: inherit; resize: none"
+                        placeholder="Leave some notes. Tell us what happened, or what you were doing"
+                    ></textarea>
+                </div>
+                <button onclick="submit(event)">Report</button>
+            </div>
+        </div>
+        <script>
+            // autofill id with id from url
+            let urlParams = new URLSearchParams(window.location.search);
+            let errorID = urlParams.get("id");
+            let loc = urlParams.get("location");
+            let notes;
+            let name;
+            let locationAccessKey;
+            getLocationAccessKey();
+            if (errorID) {
+                document.getElementById("errorID").value = errorID;
+            }
+
+            async function submit(event) {
+                event.stopPropagation();
+                event.preventDefault();
+                notes = document.getElementById("notes").value;
+                name = document.getElementById("name").value;
+                const url =
+                    "https://services.leadconnectorhq.com/conversations/messages";
+                const options = {
+                    method: "POST",
+                    headers: {
+                        Authorization: "Bearer " + locationAccessKey,
+                        Version: "2021-04-15",
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: `{"type":"Email","contactId":"VnK2kJYKPJSoBd4DAQ3n","emailFrom":"error-report-noreply@kairoscloud.io","html":"${formatHTML()}","message":"New Error Report – ${errorID}","subject":"New Error Report – ${errorID}","emailTo":"support@kairoscloud.io"}`,
+                };
+
+                try {
+                    const response = await fetch(url, options);
+                    const data = await response.json();
+                    console.log(data);
+                    if (!window.location.href.includes("noCloseOnSubmit")) {
+                        // close this window
+                        window.location.href =
+                            "https://sites.kairoscloud.io/ErrorReport/thankyou.html";
+                    }
+                } catch (error) {
+                    console.error(error);
+                }
+            }
+
+            function formatHTML() {
+                return `
+                    <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.5;">
+                        <h2 style="color: #333;">New error reported for ${loc}</h2>
+                        <p><strong>Error ID:</strong> ${errorID}</p>
+                        <p><strong>Name:</strong> ${name}</p>
+                        <p><strong>Notes:</strong> ${notes}</p>
+                        <p><strong>Location:</strong> ${loc}</p>
+                        <p><strong>Time reported:</strong> ${new Date().toLocaleString()}</p>
+                        <p><strong> <a href=https://console.firebase.google.com/u/3/project/kairos-test-eedd6/firestore/databases/-default-/data/~2Ferrors~2F${errorID}>Firebase link</a></strong></p>
+                    </div>
+                `
+                    .replace(/(\r\n|\n|\r)/gm, "")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&apos;");
+            }
+
+            function getLocationAccessKey() {
+                // get doc yfyIrXrm61r57rx3ex4N from collection tokens
+                const docRef = firestore
+                    .collection("tokens")
+                    .doc("yfyIrXrm61r57rx3ex4N");
+                docRef
+                    .get()
+                    .then((doc) => {
+                        if (doc.exists) {
+                            locationAccessKey = doc.data().locationAccessToken;
+                        } else {
+                            console.log(
+                                "Could not find location access key for specified location",
+                            );
+                        }
+                    })
+                    .catch((error) => {
+                        console.log(
+                            "Could not find location access key for specified location:",
+                            error,
+                        );
+                    });
+            }
+        </script>
+    </body>
+</html>
