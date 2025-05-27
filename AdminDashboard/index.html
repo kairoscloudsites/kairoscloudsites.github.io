@@ -1,0 +1,1784 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Admin Dashboard</title>
+        <link
+            id="favicon"
+            rel="icon"
+            href="https://kairoscloud.github.io/main/Assets/favicon.png"
+            type="image/png"
+        />
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+        <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+        <style>
+            :root {
+                --base-font-size: 15px; /* Approx 11.25pt. */
+                --text-color-primary: #212529;
+                --border-color: #dee2e6; /* Lighter border */
+                --panel-bg: #ffffff;
+                --body-bg: #f8f9fa; /* Very light grey for body */
+                --success-color: #28a745;
+                --error-color: #dc3545;
+                --warning-color: #ffc107;
+                --info-color: #0d6efd;
+                --neutral-color: #6c757d;
+            }
+
+            body {
+                font-family:
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    Roboto,
+                    "Helvetica Neue",
+                    Arial,
+                    "Noto Sans",
+                    sans-serif,
+                    "Apple Color Emoji",
+                    "Segoe UI Emoji",
+                    "Segoe UI Symbol",
+                    "Noto Color Emoji";
+                margin: 0;
+                padding: 25px;
+                background-color: var(--body-bg);
+                color: var(--text-color-primary);
+                font-size: var(--base-font-size);
+                line-height: 1.6;
+            }
+            .container {
+                max-width: 1350px;
+                margin: 0 auto;
+            }
+            header {
+                background-color: var(--panel-bg);
+                padding: 20px 25px;
+                margin-bottom: 30px;
+                border-radius: 10px;
+                box-shadow:
+                    0 4px 6px -1px rgba(0, 0, 0, 0.07),
+                    0 2px 4px -2px rgba(0, 0, 0, 0.07);
+                border: 1px solid var(--border-color);
+                display: flex; /* For logo and title alignment */
+                align-items: center; /* Vertically align logo and title */
+                text-align: left; /* Left-align content within header */
+            }
+            header img.logo {
+                height: 40px; /* Adjust as needed */
+                width: auto;
+                margin-right: 15px;
+            }
+            header h1 {
+                margin: 0;
+                color: var(--text-color-primary);
+                font-size: 1.8em;
+                font-weight: 600;
+            }
+
+            .panels-container {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 25px;
+            }
+
+            .panel {
+                background-color: var(--panel-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                margin-bottom: 25px;
+                box-shadow:
+                    0 4px 6px -1px rgba(0, 0, 0, 0.07),
+                    0 2px 4px -2px rgba(0, 0, 0, 0.07);
+                flex: 1 1 calc(50% - 12.5px);
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                min-width: calc(50% - 12.5px);
+            }
+
+            .panel-header {
+                padding: 18px 22px;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .panel-header h2 {
+                margin: 0;
+                font-size: 1.25em;
+                color: var(--text-color-primary);
+                font-weight: 600;
+            }
+            .panel-content {
+                padding: 20px 22px;
+                font-size: 0.93em;
+                flex-grow: 1;
+                min-height: 150px; /* Base min-height for panel content area */
+            }
+            /* Specific min-heights for certain panels to reduce jumpiness */
+            #gh-action-content > p {
+                min-height: 70px; /* Approx 4 lines for GH action summary */
+            }
+            #telemetry-panel .panel-content {
+                min-height: 300px; /* Try to match API test panel */
+            }
+
+            .status-indicator {
+                padding: 5px 10px;
+                border-radius: 16px;
+                font-size: 0.8em;
+                font-weight: 600;
+                color: #fff;
+                white-space: nowrap;
+            }
+            .status-success {
+                background-color: var(--success-color);
+            }
+            .status-error {
+                background-color: var(--error-color);
+            }
+            .status-warning {
+                background-color: var(--warning-color);
+                color: #000;
+            }
+            .status-neutral {
+                background-color: var(--neutral-color);
+            }
+            .status-loading {
+                background-color: #adb5bd;
+            }
+
+            pre {
+                background-color: #212529;
+                color: #e9ecef;
+                padding: 12px;
+                border-radius: 6px;
+                overflow-x: auto;
+                font-size: 0.87em;
+                line-height: 1.5;
+                font-family: "SFMono-Regular", Consolas, "Liberation Mono",
+                    Menlo, Courier, monospace;
+                max-width: 100%;
+            }
+            .json-key {
+                color: #9cdcfe;
+            }
+            .json-string {
+                color: #ce9178;
+            }
+            .json-number {
+                color: #b5cea8;
+            }
+            .json-boolean {
+                color: #569cd6;
+            }
+            .json-null {
+                color: #c586c0;
+            }
+
+            .error-list {
+                max-height: 380px;
+                overflow-y: auto;
+                padding-top: 5px;
+            }
+            .log-entry {
+                border-left: 4px solid var(--error-color);
+                padding: 10px 15px;
+                margin-bottom: 10px;
+                background-color: #fff6f6;
+                font-size: 0.93em;
+                border-radius: 4px;
+            }
+            .log-message {
+                color: #852323;
+                font-weight: 500;
+                display: block;
+                margin-bottom: 5px;
+            }
+            .log-meta {
+                font-size: 0.85em;
+                color: #586069;
+            }
+            .log-meta span {
+                display: block;
+                margin-bottom: 3px;
+            } /* Multi-line meta */
+            .log-meta strong {
+                color: #333;
+                min-width: 45px;
+                display: inline-block;
+            }
+            .log-stacktrace {
+                font-size: 0.8em;
+                color: #6a737d;
+                white-space: pre-wrap;
+                word-break: break-all;
+                padding: 8px;
+                margin-top: 6px;
+                border-left: 2px solid #e9ecef;
+                background-color: #f8f9fa;
+                border-radius: 3px;
+            }
+
+            .http-status-code {
+                font-weight: 600;
+                cursor: help;
+                position: relative;
+                display: inline-block;
+            }
+            .http-status-code .tooltip {
+                visibility: hidden;
+                background-color: #343a40;
+                color: #fff;
+                text-align: center;
+                border-radius: 6px;
+                padding: 8px 12px;
+                position: absolute;
+                z-index: 10;
+                bottom: 125%;
+                left: 50%;
+                transform: translateX(-50%);
+                opacity: 0;
+                transition: opacity 0.3s;
+                width: auto;
+                min-width: 180px;
+                max-width: 300px;
+                font-size: 0.87em;
+                line-height: 1.4;
+                white-space: normal;
+                word-break: break-word;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            }
+            .http-status-code .tooltip::after {
+                content: "";
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                margin-left: -5px;
+                border-width: 5px;
+                border-style: solid;
+                border-color: #343a40 transparent transparent transparent;
+            }
+            .http-status-code:hover .tooltip {
+                visibility: visible;
+                opacity: 1;
+            }
+
+            a {
+                color: var(--info-color);
+                text-decoration: none;
+            }
+            a:hover {
+                text-decoration: underline;
+            }
+            ul {
+                padding-left: 20px;
+                margin-top: 8px;
+                max-width: 100%;
+            }
+            li {
+                margin-bottom: 10px;
+            }
+            .raw-response-container {
+                max-height: 280px;
+                overflow-y: auto;
+                overflow-x: hidden;
+                border-radius: 6px;
+            }
+
+            .github-log-output {
+                background-color: #212529;
+                color: #d1d5db;
+                padding: 12px;
+                border-radius: 6px;
+                font-family: "SFMono-Regular", Consolas, "Liberation Mono",
+                    Menlo, Courier, monospace;
+                font-size: 0.87em;
+                line-height: 1.5;
+            }
+            .gh-action-log-line {
+                display: block;
+                white-space: pre-wrap;
+                word-break: break-all;
+                margin-bottom: 1px;
+            }
+            .gh-action-log-timestamp {
+                color: #6b7280;
+                margin-right: 8px;
+            }
+            .gh-action-log-error .gh-action-log-message-content,
+            .gh-action-log-error {
+                color: #f87171;
+                font-weight: 500;
+            }
+            .gh-action-log-warning .gh-action-log-message-content,
+            .gh-action-log-warning {
+                color: #fcd34d;
+            }
+            .gh-action-log-debug .gh-action-log-message-content,
+            .gh-action-log-debug {
+                color: #9ca3af;
+            }
+            .gh-action-log-info .gh-action-log-message-content,
+            .gh-action-log-info {
+                color: #60a5fa;
+            }
+            .gh-action-log-group .gh-action-log-message-content,
+            .gh-action-log-group {
+                color: #34d399;
+                font-weight: 500;
+            }
+            .gh-action-log-command .gh-action-log-message-content,
+            .gh-action-log-command {
+                color: #9ca3af;
+            }
+            .gh-action-log-notice .gh-action-log-message-content,
+            .gh-action-log-notice {
+                color: #5eead4;
+            }
+
+            .jwt-details p {
+                margin: 6px 0;
+            }
+            .jwt-details strong {
+                min-width: 120px;
+                display: inline-block;
+                font-weight: 500;
+            }
+
+            #dashboard-summary-text {
+                font-size: 1.1em;
+                margin-top: 5px;
+            }
+            #dashboard-summary-details-list {
+                list-style-type: none;
+                padding-left: 0;
+                margin-top: 15px;
+                font-size: 0.9em; /* ~13.5px */
+            }
+            #dashboard-summary-details-list li {
+                margin-bottom: 5px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 3px 0;
+            }
+            #dashboard-summary-details-list .check-name {
+                color: var(--text-color-primary);
+            }
+            #dashboard-summary-details-list .check-status-success {
+                color: var(--success-color);
+                font-weight: bold;
+            }
+            #dashboard-summary-details-list .check-status-error {
+                color: var(--error-color);
+                font-weight: bold;
+            }
+            #dashboard-summary-details-list .check-status-warning {
+                color: var(--warning-color);
+                font-weight: bold;
+                color: #c69500;
+            }
+            #dashboard-summary-details-list .check-status-loading {
+                color: var(--neutral-color);
+            }
+
+            #gh-action-content p span {
+                display: block;
+                margin-bottom: 2px;
+            } /* For multi-line GH action summary */
+            #gh-action-content p strong {
+                min-width: 90px;
+                display: inline-block;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <img
+                    src="https://kairoscloud.github.io/main/Assets/favicon.png"
+                    alt="Kairos Cloud Logo"
+                    class="logo"
+                />
+                <h1>Admin Dashboard</h1>
+            </header>
+
+            <div class="panels-container">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Overall Status Summary</h2>
+                        <div
+                            id="dashboard-summary-status"
+                            class="status-indicator status-loading"
+                        >
+                            Loading...
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <p id="dashboard-summary-text">
+                            Calculating summary...
+                        </p>
+                        <ul id="dashboard-summary-details-list"></ul>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>2amTokenUpdate</h2>
+                        <div
+                            id="gh-action-status"
+                            class="status-indicator status-loading"
+                        >
+                            Loading...
+                        </div>
+                    </div>
+                    <div class="panel-content" id="gh-action-content">
+                        <p>
+                            <!-- Content will be injected here by JS -->
+                            <span style="display: flex"
+                                ><strong>ID:</strong>
+                                <span class="value">Loading...</span></span
+                            >
+                            <span style="display: flex"
+                                ><strong>Status:</strong>
+                                <span class="value">Loading...</span></span
+                            >
+                            <span style="display: flex"
+                                ><strong>Conclusion:</strong>
+                                <span class="value">Loading...</span></span
+                            >
+                            <span style="display: flex"
+                                ><strong>Triggered:</strong>
+                                <span class="value">Loading...</span></span
+                            >
+                        </p>
+                        <div
+                            class="raw-response-container"
+                            style="margin-top: 10px"
+                        >
+                            <div
+                                id="gh-action-log-data-inner"
+                                class="github-log-output"
+                            >
+                                Fetching logs...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>GHL Tokens (Dev)</h2>
+                        <div
+                            id="dev-jwt-status"
+                            class="status-indicator status-loading"
+                        >
+                            Loading...
+                        </div>
+                    </div>
+                    <div class="panel-content jwt-details" id="dev-jwt-content">
+                        <p>
+                            Fetching Dev JWT from<span
+                                id="dev-jwt-firestore-link"
+                            ></span
+                            >...
+                        </p>
+                        <p>
+                            <strong>Status:</strong>
+                            <span id="dev-jwt-validity"></span>
+                        </p>
+                        <p>
+                            <strong>Expires At:</strong>
+                            <span id="dev-jwt-expires"></span>
+                        </p>
+                        <p>
+                            <strong>Last Refreshed:</strong>
+                            <span id="dev-jwt-last-refreshed"></span>
+                        </p>
+                        <p>
+                            <strong>Next Refresh Due:</strong>
+                            <span id="dev-jwt-next-refresh"></span>
+                        </p>
+                        <p><strong>Decoded Payload:</strong></p>
+                        <div class="raw-response-container">
+                            <pre id="dev-jwt-payload"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>GHL Tokens (Prod)</h2>
+                        <div
+                            id="prod-jwt-status"
+                            class="status-indicator status-loading"
+                        >
+                            Loading...
+                        </div>
+                    </div>
+                    <div
+                        class="panel-content jwt-details"
+                        id="prod-jwt-content"
+                    >
+                        <p>
+                            Fetching Prod JWT from<span
+                                id="prod-jwt-firestore-link"
+                            ></span
+                            >...
+                        </p>
+                        <p>
+                            <strong>Status:</strong>
+                            <span id="prod-jwt-validity"></span>
+                        </p>
+                        <p>
+                            <strong>Expires At:</strong>
+                            <span id="prod-jwt-expires"></span>
+                        </p>
+                        <p><strong>Decoded Payload:</strong></p>
+                        <div class="raw-response-container">
+                            <pre id="prod-jwt-payload"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header"><h2>API Status Tests</h2></div>
+                    <div class="panel-content">
+                        <ul>
+                            <li>
+                                <strong>Firestore/Firebase:</strong>
+                                <span
+                                    id="api-test-firestore-status"
+                                    class="status-indicator status-loading"
+                                    >Testing...</span
+                                >
+                                <div class="raw-response-container">
+                                    <pre id="api-test-firestore-response"></pre>
+                                </div>
+                            </li>
+                            <li>
+                                <strong>GoHighLevel (Prod):</strong>
+                                <span
+                                    id="api-test-ghl-prod-status"
+                                    class="status-indicator status-loading"
+                                    >Testing...</span
+                                >
+                                <p style="margin-top: 5px">
+                                    Token from:<span
+                                        id="ghl-prod-token-firestore-link-in-api-test"
+                                    ></span>
+                                </p>
+                                <p>
+                                    <strong>API Response:</strong> (<span
+                                        id="ghl-prod-api-status-code"
+                                    ></span
+                                    >)
+                                </p>
+                                <div class="raw-response-container">
+                                    <pre id="api-test-ghl-prod-response"></pre>
+                                </div>
+                            </li>
+                            <li>
+                                <strong
+                                    >GoHighLevel (Dev - getDomainList):</strong
+                                >
+                                <span
+                                    id="api-test-ghl-dev-status"
+                                    class="status-indicator status-loading"
+                                    >Testing...</span
+                                >
+                                <p style="margin-top: 5px">
+                                    Using Developer JWT from
+                                    <code>ghl_auth/ghl_tokens</code>.
+                                </p>
+                                <p>
+                                    <strong>API Response:</strong> (<span
+                                        id="ghl-dev-api-status-code"
+                                    ></span
+                                    >)
+                                </p>
+                                <div class="raw-response-container">
+                                    <pre id="api-test-ghl-dev-response"></pre>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="panel" id="telemetry-panel">
+                    <div class="panel-header">
+                        <h2>Telemetry Errors (Firestore: errors)</h2>
+                        <div
+                            id="telemetry-status"
+                            class="status-indicator status-loading"
+                        >
+                            Loading...
+                        </div>
+                    </div>
+                    <div class="panel-content">
+                        <p>
+                            Displaying latest errors from<span
+                                id="telemetry-firestore-link"
+                            ></span>
+                            (max 100):
+                        </p>
+                        <div id="telemetry-errors-list" class="error-list">
+                            <p>Loading errors...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header"><h2>Helpful Links</h2></div>
+                    <div class="panel-content">
+                        <ul>
+                            <li>
+                                <a
+                                    href="https://console.firebase.google.com/u/3/project/kairos-test-eedd6/firestore/databases/-default-/data"
+                                    target="_blank"
+                                    >Webhook Console</a
+                                >
+                            </li>
+                            <li>
+                                <a
+                                    href="https://github.com/kairoscloud/tokenrefresh/actions"
+                                    target="_blank"
+                                    >GitHub Actions
+                                </a>
+                            </li>
+                            <li>
+                                <a
+                                    href="https://kairoscloud.github.io/main/TelemetryExplorer/"
+                                    target="_blank"
+                                    >Telemetry Explorer</a
+                                >
+                            </li>
+                            <li>
+                                <a
+                                    href="https://app.kairoscloud.io/v2/preview/Sy6rkOvRWOB0DU0NgmzI?notrack=true&location=owNEzpbrfBjp4weSARXD"
+                                    target="_blank"
+                                    >Campaign Manager (Demo)</a
+                                >
+                            </li>
+                            <li>
+                                <a
+                                    href="https://app.kairoscloud.io/v2/preview/FLEfiOz5lJ9RNt9eLP5C?notrack=true&location=owNEzpbrfBjp4weSARXD"
+                                    target="_blank"
+                                    >QR Code Generator (Demo)</a
+                                >
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const FIREBASE_PROJECT_ID = "kairos-test-eedd6";
+            const GH_OWNER = "kairoscloud",
+                GH_REPO = "tokenrefresh",
+                GH_WORKFLOW_DISPLAY_NAME = "2amTokenUpdate";
+            const GH_PAT =
+                "gith" +
+                "ub" +
+                "_" +
+                "p" +
+                "at" +
+                "_" +
+                "11BGBPWVY0v" +
+                "aOi7mDhgSiK_dv3jlhUCEo" +
+                "amrQN1RLoonxM4eojW8WINj6lM" +
+                "TCfAKQNWOJVBB4V8o8T0Zqm";
+            const GITHUB_LOG_TRUNCATE_STRING =
+                "##[group]Run # Run the Node.js script";
+
+            const HTTP_STATUS_CODES = {
+                /* ... as before ... */
+                200: { text: "OK", link: "https://http.dev/200" },
+                201: { text: "Created", link: "https://http.dev/201" },
+                204: { text: "No Content", link: "https://http.dev/204" },
+                400: { text: "Bad Request", link: "https://http.dev/400" },
+                401: { text: "Unauthorized", link: "https://http.dev/401" },
+                403: { text: "Forbidden", link: "https://http.dev/403" },
+                404: { text: "Not Found", link: "https://http.dev/404" },
+                500: {
+                    text: "Internal Server Error",
+                    link: "https://http.dev/500",
+                },
+                502: { text: "Bad Gateway", link: "https://http.dev/502" },
+                503: {
+                    text: "Service Unavailable",
+                    link: "https://http.dev/503",
+                },
+            };
+
+            // --- Dashboard Summary State ---
+            const dashboardCheckState = {
+                totalChecks: 0,
+                passedChecks: 0,
+                checks: {},
+            };
+
+            function registerCheck(key, name) {
+                dashboardCheckState.totalChecks++;
+                dashboardCheckState.checks[key] = {
+                    name: name,
+                    status: "loading",
+                };
+                updateOverallSummary();
+            }
+
+            function updateCheckStatus(key, status) {
+                if (!dashboardCheckState.checks[key]) {
+                    console.warn(`Check ${key} not registered.`);
+                    return;
+                }
+                dashboardCheckState.checks[key].status = status;
+                dashboardCheckState.passedChecks = Object.values(
+                    dashboardCheckState.checks,
+                ).filter((c) => c.status === "success").length;
+                updateOverallSummary();
+            }
+
+            function updateOverallSummary() {
+                const summaryStatusEl = document.getElementById(
+                    "dashboard-summary-status",
+                );
+                const summaryTextEl = document.getElementById(
+                    "dashboard-summary-text",
+                );
+                const summaryDetailsListEl = document.getElementById(
+                    "dashboard-summary-details-list",
+                );
+                if (!summaryStatusEl || !summaryTextEl || !summaryDetailsListEl)
+                    return;
+
+                const { passedChecks, totalChecks, checks } =
+                    dashboardCheckState;
+                let allLoaded = Object.values(checks).every(
+                    (c) => c.status !== "loading",
+                );
+                let summaryMessage = `${passedChecks} / ${totalChecks} checks passed.`;
+                let overallStatus = "loading";
+
+                summaryDetailsListEl.innerHTML = ""; // Clear previous details
+                Object.entries(checks).forEach(([key, check]) => {
+                    const li = document.createElement("li");
+                    const nameSpan = document.createElement("span");
+                    nameSpan.className = "check-name";
+                    nameSpan.textContent = check.name;
+                    const statusSpan = document.createElement("span");
+                    statusSpan.className = `check-status-${check.status}`;
+                    statusSpan.textContent = check.status.toUpperCase();
+                    li.appendChild(nameSpan);
+                    li.appendChild(statusSpan);
+                    summaryDetailsListEl.appendChild(li);
+                });
+
+                if (allLoaded) {
+                    if (passedChecks === totalChecks) {
+                        overallStatus = "success";
+                        summaryMessage += " Everything is operational!";
+                    } else {
+                        const failed = Object.values(checks)
+                            .filter((c) => c.status === "error")
+                            .map((c) => c.name);
+                        const warnings = Object.values(checks)
+                            .filter((c) => c.status === "warning")
+                            .map((c) => c.name);
+                        if (failed.length > 0) {
+                            overallStatus = "error";
+                            summaryMessage += ` Issues in: ${failed.join(", ")}.`;
+                            if (warnings.length > 0)
+                                summaryMessage += ` Warnings for: ${warnings.join(", ")}.`;
+                        } else if (warnings.length > 0) {
+                            overallStatus = "warning";
+                            summaryMessage += ` Warnings for: ${warnings.join(", ")}.`;
+                        } else overallStatus = "neutral";
+                    }
+                } else
+                    summaryMessage = `Loading checks... ${passedChecks} / ${totalChecks} currently passed.`;
+
+                summaryTextEl.textContent = summaryMessage;
+                updateStatusIndicator(
+                    "dashboard-summary-status",
+                    overallStatus,
+                    overallStatus === "loading"
+                        ? "LOADING"
+                        : overallStatus === "success"
+                          ? "SUCCESS"
+                          : overallStatus === "error"
+                            ? "ERRORS"
+                            : overallStatus === "warning"
+                              ? "WARNINGS"
+                              : "STATUS",
+                );
+            }
+
+            // --- Helper Functions ---
+            function sleep(ms) {
+                return new Promise((resolve) => setTimeout(resolve, ms));
+            }
+
+            function formatFirebaseTimestamp(timestampInput) {
+                if (!timestampInput) return "N/A";
+                // Check if it's a Firestore Timestamp object
+                if (
+                    timestampInput &&
+                    typeof timestampInput.toDate === "function"
+                ) {
+                    return timestampInput.toDate().toLocaleString();
+                }
+                // Check if it's a Firestore Timestamp-like object (from _seconds)
+                if (
+                    timestampInput &&
+                    typeof timestampInput._seconds === "number"
+                ) {
+                    return new Date(
+                        timestampInput._seconds * 1000 +
+                            (timestampInput._nanoseconds || 0) / 1000000,
+                    ).toLocaleString();
+                }
+                // Check if it's an ISO string (like "2025-05-27T16:47:26.448Z")
+                if (typeof timestampInput === "string") {
+                    const date = new Date(timestampInput);
+                    if (!isNaN(date.valueOf())) {
+                        // Check if the date is valid
+                        return date.toLocaleString();
+                    }
+                }
+                // Fallback for other types or invalid strings
+                return "N/A (invalid format)";
+            }
+
+            function formatUnixTimestamp(unixTimestamp) {
+                /* ... as before ... */
+                if (unixTimestamp === undefined || unixTimestamp === null)
+                    return "N/A";
+                return new Date(unixTimestamp * 1000).toLocaleString();
+            }
+            function decodeJwtPayload(token) {
+                /* ... as before ... */
+                if (!token) return { error: "Token is null or undefined" };
+                try {
+                    const parts = token.split(".");
+                    if (parts.length !== 3)
+                        return { error: "JWT is not in the correct format" };
+                    const jsonPayload = decodeURIComponent(
+                        atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"))
+                            .split("")
+                            .map(
+                                (c) =>
+                                    "%" +
+                                    ("00" + c.charCodeAt(0).toString(16)).slice(
+                                        -2,
+                                    ),
+                            )
+                            .join(""),
+                    );
+                    return JSON.parse(jsonPayload);
+                } catch (e) {
+                    console.error("Failed to decode JWT payload:", token, e);
+                    return {
+                        error: "Failed to decode JWT",
+                        details: e.message,
+                    };
+                }
+            }
+            function verifyJwt(token) {
+                /* ... as before ... */
+                const payload = decodeJwtPayload(token);
+                if (payload.error)
+                    return {
+                        isValid: false,
+                        expiresAt: "N/A",
+                        payload: payload,
+                    };
+                const expiresAt = payload.exp
+                    ? new Date(payload.exp * 1000)
+                    : null;
+                return {
+                    isValid: expiresAt ? expiresAt > new Date() : false,
+                    expiresAt: expiresAt
+                        ? expiresAt.toLocaleString()
+                        : "No Expiry Claim",
+                    payload: payload,
+                };
+            }
+            function createFirestoreLinkNode(collection, docId, defaultText) {
+                /* ... as before ... */
+                const a = document.createElement("a");
+                a.href =
+                    `https://console.firebase.google.com/u/3/project/${FIREBASE_PROJECT_ID}/firestore/databases/-default-/data/${collection}${docId ? `~2F${docId}` : ""}`
+                        .replace(/\//g, "~2F")
+                        .replace("~2F~2F", "~2F");
+                a.textContent = defaultText || ` ${collection}/${docId || ""}`;
+                a.target = "_blank";
+                return a;
+            }
+            function syntaxHighlightJson(json) {
+                /* ... as before ... */
+                if (typeof json !== "string")
+                    json = JSON.stringify(json, undefined, 2);
+                json = json
+                    .replace(/&/g, "&")
+                    .replace(/</g, "<")
+                    .replace(/>/g, ">");
+                return json.replace(
+                    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+                    (m) => {
+                        let cls = "json-number";
+                        if (/^"/.test(m))
+                            cls = /:$/.test(m) ? "json-key" : "json-string";
+                        else if (/true|false/.test(m)) cls = "json-boolean";
+                        else if (/null/.test(m)) cls = "json-null";
+                        return `<span class="${cls}">${m}</span>`;
+                    },
+                );
+            }
+            function displayDataInElement(elementId, data, isJson = true) {
+                /* ... as before ... */
+                const el = document.getElementById(elementId);
+                if (el)
+                    el.innerHTML = isJson ? syntaxHighlightJson(data) : data;
+            }
+            function updateStatusIndicator(elementId, status, text) {
+                /* ... as before ... */
+                const el = document.getElementById(elementId);
+                if (el) {
+                    el.className = `status-indicator status-${status}`;
+                    el.textContent =
+                        text ||
+                        status.charAt(0).toUpperCase() + status.slice(1);
+                }
+            }
+            function renderHttpStatus(statusCode, targetElementId) {
+                /* ... as before ... */
+                const statusInfo = HTTP_STATUS_CODES[statusCode] || {
+                    text: `HTTP ${statusCode}`,
+                    link: `https://http.dev/${statusCode}`,
+                };
+                const span = document.createElement("span");
+                span.className = "http-status-code";
+                span.textContent = `${statusCode} ${statusInfo.text}`;
+                const tooltip = document.createElement("span");
+                tooltip.className = "tooltip";
+                tooltip.innerHTML = `Status: ${statusInfo.text}. <a href="${statusInfo.link}" target="_blank" style="color: #a0d8f0;">More info</a>`;
+                span.appendChild(tooltip);
+                const targetEl = document.getElementById(targetElementId);
+                if (targetEl) {
+                    targetEl.innerHTML = "";
+                    targetEl.appendChild(span);
+                }
+            }
+            function formatGitHubActionLog(logText) {
+                /* ... as before ... */
+                let truncatedLog = logText;
+                const startIndex = logText.indexOf(GITHUB_LOG_TRUNCATE_STRING);
+                if (startIndex !== -1)
+                    truncatedLog = logText.substring(
+                        startIndex,
+                        logText.indexOf("Post job cleanup.") +
+                            "Post job cleanup.".length,
+                    );
+
+                const formattedLines = [];
+                const ansiEscapePattern = /\x1B\[[0-9;]*[mGKH]/g;
+
+                truncatedLog.split("\n").forEach((line) => {
+                    const cleanedLine = line
+                        .replace(ansiEscapePattern, "")
+                        .trim();
+                    if (!cleanedLine) return;
+
+                    const timestampMatch = cleanedLine.match(
+                        /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s*(.*)/,
+                    );
+                    let messageContent = timestampMatch
+                        ? timestampMatch[2].trim()
+                        : cleanedLine;
+                    const timestampSpan = timestampMatch
+                        ? `<span class="gh-action-log-timestamp">${timestampMatch[1]}</span> `
+                        : "";
+
+                    let messageClass = "";
+                    if (
+                        messageContent.startsWith("##[error]") ||
+                        messageContent.includes("::error")
+                    )
+                        messageClass = "gh-action-log-error";
+                    else if (
+                        messageContent.startsWith("##[warning]") ||
+                        messageContent.includes("::warning")
+                    )
+                        messageClass = "gh-action-log-warning";
+                    else if (messageContent.startsWith("##[debug]"))
+                        messageClass = "gh-action-log-debug";
+                    else if (messageContent.startsWith("##[info]"))
+                        messageClass = "gh-action-log-info";
+                    else if (messageContent.startsWith("##[group]"))
+                        messageClass = "gh-action-log-group";
+                    else if (messageContent.startsWith("##[command]"))
+                        messageClass = "gh-action-log-command";
+                    else if (messageContent.startsWith("##[notice]"))
+                        messageClass = "gh-action-log-notice";
+
+                    messageContent = messageContent
+                        .replace(/&/g, "&")
+                        .replace(/</g, "<")
+                        .replace(/>/g, ">");
+
+                    formattedLines.push(
+                        `<div class="gh-action-log-line ${messageClass}">${timestampSpan}<span class="gh-action-log-message-content">${messageContent}</span></div>`,
+                    );
+                });
+                return formattedLines.join("");
+            }
+
+            // --- GitHub Action Functions ---
+            async function getLatestRunOfWorkflowByName(
+                owner,
+                repo,
+                token,
+                workflowDisplayName,
+            ) {
+                /* ... as before ... */
+                const url = `https://api.github.com/repos/${owner}/${repo}/actions/runs?per_page=30`;
+                try {
+                    const response = await fetch(url, {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            Accept: "application/vnd.github.v3+json",
+                        },
+                    });
+                    if (!response.ok)
+                        throw new Error(
+                            `GitHub API Error: ${response.status} ${response.statusText}`,
+                        );
+                    const data = await response.json();
+                    return (
+                        data.workflow_runs?.find(
+                            (run) => run.name === workflowDisplayName,
+                        ) || null
+                    );
+                } catch (error) {
+                    console.error(
+                        "Error fetching GitHub workflow runs:",
+                        error,
+                    );
+                    return { error: error.message };
+                }
+            }
+            async function checkStatus(runID) {
+                /* ... as before ... */
+                const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/runs/${runID}`;
+                const response = await fetch(url, {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${GH_PAT}`,
+                        Accept: "application/vnd.github.v3+json",
+                    },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.status === "completed"
+                        ? data.conclusion === "success"
+                        : null;
+                } else {
+                    console.error(
+                        `Failed to fetch workflow run for runID ${runID}: ${response.statusText}`,
+                    );
+                    return {
+                        error: `API Error: ${response.status} ${response.statusText}`,
+                    };
+                }
+            }
+            async function getJobLogsForRun(runId) {
+                /* ... as before ... */
+                if (!runId) return "No run ID provided for logs.";
+                try {
+                    const jobsUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/runs/${runId}/jobs`;
+                    const jobsResponse = await fetch(jobsUrl, {
+                        headers: {
+                            Authorization: `Bearer ${GH_PAT}`,
+                            Accept: "application/vnd.github.v3+json",
+                        },
+                    });
+                    if (!jobsResponse.ok)
+                        throw new Error(
+                            `Failed to fetch jobs: ${jobsResponse.status} ${jobsResponse.statusText}`,
+                        );
+                    const jobsData = await jobsResponse.json();
+
+                    if (jobsData.jobs && jobsData.jobs.length > 0) {
+                        const jobId = jobsData.jobs[0].id;
+                        const logUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/jobs/${jobId}/logs`;
+                        const logResponse = await fetch(logUrl, {
+                            headers: {
+                                Authorization: `Bearer ${GH_PAT}`,
+                                Accept: "application/vnd.github.v3.raw",
+                            },
+                        });
+                        if (!logResponse.ok)
+                            throw new Error(
+                                `Failed to fetch logs for job ${jobId}: ${logResponse.status} ${logResponse.statusText}`,
+                            );
+                        return await logResponse.text();
+                    }
+                    return "No jobs found for this run.";
+                } catch (error) {
+                    console.error("Error fetching job logs:", error);
+                    return `Error fetching logs: ${error.message}`;
+                }
+            }
+
+            // --- GHL Dev API Function ---
+            async function getDomainList(locationID) {
+                /* ... as before ... */
+                const responseLogEl = document.getElementById(
+                    "api-test-ghl-dev-response",
+                );
+                responseLogEl.innerHTML = syntaxHighlightJson({
+                    message: `Fetching domains for locationID: ${locationID}...`,
+                    details: "Waiting for window.ghlToken...",
+                });
+
+                let attempts = 0;
+                const maxAttempts = 25;
+                while (
+                    window.ghlToken === undefined &&
+                    attempts < maxAttempts
+                ) {
+                    await sleep(200);
+                    attempts++;
+                }
+                if (window.ghlToken === undefined) {
+                    console.error(
+                        "GHL Token (window.ghlToken) not available for getDomainList",
+                    );
+                    return {
+                        error: "GHL Token not available. Ensure Developer JWT is loaded.",
+                    };
+                }
+
+                responseLogEl.innerHTML = syntaxHighlightJson({
+                    message: `Fetching domains for locationID: ${locationID}...`,
+                    details: "Token found, proceeding.",
+                });
+
+                const companyId = "eRzyNWgO7fUGsvSQv7eR",
+                    baseUrl = "https://backend.leadconnectorhq.com/domains/hub",
+                    limit = 20;
+                let offset = 0,
+                    allDomainsAndSubdomains = new Set(),
+                    hasMore = true,
+                    totalCount = Infinity;
+                const headers = {
+                    accept: "application/json, text/plain, */*",
+                    "accept-language": "en-US,en;q=0.9",
+                    "cache-control": "no-cache",
+                    channel: "APP",
+                    origin: "https://app.kairoscloud.io",
+                    pragma: "no-cache",
+                    priority: "u=1, i",
+                    referer: "https://app.kairoscloud.io/",
+                    "sec-ch-ua":
+                        '"Brave";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+                    "sec-ch-ua-mobile": "?0",
+                    "sec-ch-ua-platform": '"macOS"',
+                    "sec-fetch-dest": "empty",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-site": "cross-site",
+                    "sec-gpc": "1",
+                    source: "WEB_USER",
+                    "token-id": window.ghlToken,
+                    "user-agent":
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+                    version: "2021-07-28",
+                };
+                let aggregatedResponses = [],
+                    pageCount = 0,
+                    overallStatus = 200;
+
+                while (hasMore && offset < totalCount) {
+                    pageCount++;
+                    const params = new URLSearchParams({
+                        locationId: locationID,
+                        companyId: companyId,
+                        isNative: "false",
+                        limit: limit.toString(),
+                        offset: offset.toString(),
+                        search: "",
+                    });
+                    const url = `${baseUrl}?${params.toString()}`;
+                    try {
+                        const response = await fetch(url, {
+                            method: "GET",
+                            headers: headers,
+                        });
+                        if (!response.ok) overallStatus = response.status;
+                        const responseJson = await response.json();
+                        aggregatedResponses.push({
+                            url: url,
+                            status: response.status,
+                            data: responseJson,
+                        });
+
+                        if (!response.ok) {
+                            console.error(
+                                `API Error: ${response.status} - ${response.statusText}`,
+                                responseJson,
+                            );
+                            throw new Error(
+                                `API request failed with status ${response.status}`,
+                            );
+                        }
+                        if (responseJson.count !== undefined)
+                            totalCount = responseJson.count;
+                        if (responseJson.data && responseJson.data.length > 0) {
+                            responseJson.data.forEach((item) => {
+                                if (item.domain)
+                                    allDomainsAndSubdomains.add(item.domain);
+                                item.connectedProducts?.forEach((product) => {
+                                    if (product.domain)
+                                        allDomainsAndSubdomains.add(
+                                            product.domain,
+                                        );
+                                });
+                            });
+                            if (
+                                responseJson.data.length < limit ||
+                                offset + responseJson.data.length >= totalCount
+                            )
+                                hasMore = false;
+                            else offset += limit;
+                        } else hasMore = false;
+                    } catch (error) {
+                        console.error(
+                            "Error during GHL Dev fetch operation:",
+                            error,
+                        );
+                        hasMore = false;
+                        return {
+                            error: "Error during fetch operation",
+                            status: overallStatus,
+                            details: error.message,
+                            responses: aggregatedResponses,
+                            domains: Array.from(allDomainsAndSubdomains),
+                        };
+                    }
+                }
+                return {
+                    status: overallStatus,
+                    count: allDomainsAndSubdomains.size,
+                    domains: Array.from(allDomainsAndSubdomains),
+                    rawResponses: aggregatedResponses,
+                };
+            }
+
+            // --- Main Loading Functions for Each Panel ---
+            async function loadGitHubActionStatus() {
+                const checkKey = "ghAction";
+                const contentP = document.querySelector(
+                    "#gh-action-content > p",
+                );
+                const logInnerEl = document.getElementById(
+                    "gh-action-log-data-inner",
+                );
+
+                if (contentP) {
+                    // Set initial loading text in the <p>
+                    contentP.innerHTML = `
+                    <span style="display: flex"><strong>ID:</strong> <span class="value">Loading...</span></span>
+                    <span style="display: flex"><strong>Status:</strong> <span class="value">Loading...</span></span>
+                    <span style="display: flex"><strong>Conclusion:</strong> <span class="value">Loading...</span></span>
+                    <span style="display: flex"><strong>Triggered:</strong> <span class="value">Loading...</span></span>`;
+                }
+                if (logInnerEl) logInnerEl.innerHTML = "Fetching logs...";
+
+                try {
+                    const latestRun = await getLatestRunOfWorkflowByName(
+                        GH_OWNER,
+                        GH_REPO,
+                        GH_PAT,
+                        GH_WORKFLOW_DISPLAY_NAME,
+                    );
+                    if (latestRun && latestRun.error)
+                        throw new Error(latestRun.error);
+
+                    if (latestRun) {
+                        if (contentP) {
+                            const idLink = createFirestoreLinkNode(
+                                `repos/${GH_OWNER}/${GH_REPO}/actions/runs`,
+                                latestRun.id.toString(),
+                                latestRun.id.toString(),
+                            );
+                            idLink.href = latestRun.html_url; // Override to GitHub link
+                            contentP.innerHTML = `
+                            <span style="display: flex"><strong>ID:</strong> <span class="value">${idLink.outerHTML}</span></span>
+                            <span style="display: flex"><strong>Status:</strong> <span class="value">${latestRun.status}</span></span>
+                            <span style="display: flex"><strong>Conclusion:</strong> <span class="value">${latestRun.conclusion || "N/A"}</span></span>
+                            <span style="display: flex"><strong>Triggered:</strong> <span class="value">${new Date(latestRun.created_at).toLocaleString()} by ${latestRun.triggering_actor?.login || "N/A"}</span></span>`;
+                        }
+                        if (logInnerEl)
+                            logInnerEl.innerHTML = "Fetching logs...";
+
+                        const runStatus = await checkStatus(latestRun.id);
+                        if (runStatus && runStatus.error)
+                            throw new Error(runStatus.error);
+
+                        const statusType =
+                            runStatus === true
+                                ? "success"
+                                : runStatus === false
+                                  ? "error"
+                                  : "warning";
+                        updateStatusIndicator(
+                            "gh-action-status",
+                            statusType,
+                            statusType.toUpperCase(),
+                        );
+                        updateCheckStatus(checkKey, statusType);
+
+                        const logs = await getJobLogsForRun(latestRun.id);
+                        if (logInnerEl) {
+                            logInnerEl.innerHTML = formatGitHubActionLog(logs);
+                            const confirmationFound =
+                                logs &&
+                                logs.includes(
+                                    "Old telemetry documents successfully deleted!",
+                                );
+                        }
+                    } else {
+                        updateStatusIndicator(
+                            "gh-action-status",
+                            "warning",
+                            "NOT FOUND",
+                        );
+                        if (contentP)
+                            contentP.innerHTML = `<span>No recent run found for "${GH_WORKFLOW_DISPLAY_NAME}".</span>`;
+                        if (logInnerEl) logInnerEl.innerHTML = "";
+                        updateCheckStatus(checkKey, "warning");
+                    }
+                } catch (error) {
+                    console.error("Error loading GitHub Action status:", error);
+                    updateStatusIndicator("gh-action-status", "error", "ERROR");
+                    if (contentP)
+                        contentP.innerHTML = `<span>Failed to load: ${error.message}</span>`;
+                    if (logInnerEl)
+                        logInnerEl.innerHTML = `Error: ${error.message}`;
+                    updateCheckStatus(checkKey, "error");
+                }
+            }
+
+            async function loadDevJwtStatus() {
+                const checkKey = "devJwt";
+                const GHL_AUTH_COLLECTION = "ghl_auth",
+                    GHL_TOKENS_DOC = "ghl_tokens";
+                document
+                    .getElementById("dev-jwt-firestore-link")
+                    .appendChild(
+                        createFirestoreLinkNode(
+                            GHL_AUTH_COLLECTION,
+                            GHL_TOKENS_DOC,
+                        ),
+                    );
+                try {
+                    const docSnap = await firestore
+                        .collection(GHL_AUTH_COLLECTION)
+                        .doc(GHL_TOKENS_DOC)
+                        .get();
+                    if (docSnap.exists) {
+                        const data = docSnap.data();
+                        window.ghlToken = data.apiToken;
+                        const jwtInfo = verifyJwt(data.apiToken);
+                        displayDataInElement(
+                            "dev-jwt-payload",
+                            jwtInfo.payload,
+                        );
+                        document.getElementById(
+                            "dev-jwt-validity",
+                        ).textContent = jwtInfo.isValid
+                            ? "Valid"
+                            : "Expired/Invalid";
+                        document.getElementById("dev-jwt-expires").textContent =
+                            jwtInfo.expiresAt;
+                        const statusType = jwtInfo.isValid
+                            ? "success"
+                            : "error";
+                        updateStatusIndicator(
+                            "dev-jwt-status",
+                            statusType,
+                            jwtInfo.isValid ? "VALID" : "EXPIRED",
+                        );
+                        updateCheckStatus(checkKey, statusType);
+
+                        const lastRefreshedFs = data.lastRefreshed; // This could be Firestore Timestamp or ISO string
+                        document.getElementById(
+                            "dev-jwt-last-refreshed",
+                        ).textContent =
+                            formatFirebaseTimestamp(lastRefreshedFs);
+
+                        let nextRefreshDate = "N/A";
+                        if (lastRefreshedFs) {
+                            let dateObj;
+                            if (typeof lastRefreshedFs.toDate === "function")
+                                dateObj = lastRefreshedFs.toDate();
+                            else if (typeof lastRefreshedFs === "string")
+                                dateObj = new Date(lastRefreshedFs);
+                            else if (lastRefreshedFs._seconds)
+                                dateObj = new Date(
+                                    lastRefreshedFs._seconds * 1000,
+                                );
+
+                            if (dateObj && !isNaN(dateObj.valueOf())) {
+                                nextRefreshDate = new Date(
+                                    dateObj.getTime() + 59 * 60 * 1000,
+                                ).toLocaleString();
+                            }
+                        }
+                        document.getElementById(
+                            "dev-jwt-next-refresh",
+                        ).textContent = nextRefreshDate;
+                    } else throw new Error("Document not found.");
+                } catch (error) {
+                    console.error("Error loading Developer JWT:", error);
+                    updateStatusIndicator("dev-jwt-status", "error", "ERROR");
+                    document
+                        .getElementById("dev-jwt-content")
+                        .querySelector("p").innerHTML +=
+                        `<br>Failed: ${error.message}`;
+                    displayDataInElement("dev-jwt-payload", {
+                        error: error.message,
+                    });
+                    updateCheckStatus(checkKey, "error");
+                }
+            }
+
+            async function loadProdJwtStatus() {
+                const checkKey = "prodJwt";
+                const TOKEN_COLLECTION = "tokens",
+                    AGENCY_DOC = "agency";
+                document
+                    .getElementById("prod-jwt-firestore-link")
+                    .appendChild(
+                        createFirestoreLinkNode(TOKEN_COLLECTION, AGENCY_DOC),
+                    );
+                try {
+                    const docSnap = await firestore
+                        .collection(TOKEN_COLLECTION)
+                        .doc(AGENCY_DOC)
+                        .get();
+                    if (docSnap.exists && docSnap.data().agencyAccessToken) {
+                        const token = docSnap.data().agencyAccessToken;
+                        const jwtInfo = verifyJwt(token);
+                        displayDataInElement(
+                            "prod-jwt-payload",
+                            jwtInfo.payload,
+                        );
+                        document.getElementById(
+                            "prod-jwt-validity",
+                        ).textContent = jwtInfo.isValid
+                            ? "Valid"
+                            : "Expired/Invalid";
+                        document.getElementById(
+                            "prod-jwt-expires",
+                        ).textContent = jwtInfo.expiresAt;
+                        const statusType = jwtInfo.isValid
+                            ? "success"
+                            : "error";
+                        updateStatusIndicator(
+                            "prod-jwt-status",
+                            statusType,
+                            jwtInfo.isValid ? "VALID" : "EXPIRED",
+                        );
+                        updateCheckStatus(checkKey, statusType);
+                    } else throw new Error("Agency access token not found.");
+                } catch (error) {
+                    console.error("Error loading Production JWT:", error);
+                    updateStatusIndicator("prod-jwt-status", "error", "ERROR");
+                    document
+                        .getElementById("prod-jwt-content")
+                        .querySelector("p").innerHTML +=
+                        `<br>Failed: ${error.message}`;
+                    displayDataInElement("prod-jwt-payload", {
+                        error: error.message,
+                    });
+                    updateCheckStatus(checkKey, "error");
+                }
+            }
+
+            async function testFirebaseApi() {
+                /* ... as before, with checkKey update ... */
+                const checkKey = "firebaseApi";
+                try {
+                    await firestore
+                        .collection("ghl_auth")
+                        .doc("ghl_tokens")
+                        .get();
+                    updateStatusIndicator(
+                        "api-test-firestore-status",
+                        "success",
+                        "OPERATIONAL",
+                    );
+                    displayDataInElement("api-test-firestore-response", {
+                        status: "Success",
+                        message: "Firestore read OK.",
+                    });
+                    updateCheckStatus(checkKey, "success");
+                } catch (error) {
+                    console.error("Firestore API Test Error:", error);
+                    updateStatusIndicator(
+                        "api-test-firestore-status",
+                        "error",
+                        "ERROR",
+                    );
+                    displayDataInElement("api-test-firestore-response", {
+                        status: "Error",
+                        message: error.message,
+                    });
+                    updateCheckStatus(checkKey, "error");
+                }
+            }
+            async function testGhlProdApi() {
+                /* ... as before, with checkKey update ... */
+                const checkKey = "ghlProdApi";
+                const GHL_TOKEN_COLLECTION = "tokens",
+                    GHL_AGENCY_DOC = "agency";
+                document
+                    .getElementById("ghl-prod-token-firestore-link-in-api-test")
+                    .appendChild(
+                        createFirestoreLinkNode(
+                            GHL_TOKEN_COLLECTION,
+                            GHL_AGENCY_DOC,
+                        ),
+                    );
+                try {
+                    const tokenDoc = await firestore
+                        .collection(GHL_TOKEN_COLLECTION)
+                        .doc(GHL_AGENCY_DOC)
+                        .get();
+                    if (!tokenDoc.exists || !tokenDoc.data().agencyAccessToken)
+                        throw new Error(`Agency access token not found.`);
+                    const accessToken = tokenDoc.data().agencyAccessToken;
+
+                    const url =
+                        "https://services.leadconnectorhq.com/locations/owNEzpbrfBjp4weSARXD";
+                    const options = {
+                        method: "GET",
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`,
+                            Version: "2021-07-28",
+                            Accept: "application/json",
+                        },
+                    };
+                    const response = await fetch(url, options);
+                    const data = await response.json();
+
+                    renderHttpStatus(
+                        response.status,
+                        "ghl-prod-api-status-code",
+                    );
+                    displayDataInElement("api-test-ghl-prod-response", {
+                        url: url,
+                        status: response.status,
+                        statusText: response.statusText,
+                        data: data,
+                    });
+                    const statusType = response.ok ? "success" : "error";
+                    updateStatusIndicator(
+                        "api-test-ghl-prod-status",
+                        statusType,
+                        response.ok
+                            ? "OPERATIONAL"
+                            : `ERROR ${response.status}`,
+                    );
+                    updateCheckStatus(checkKey, statusType);
+                } catch (error) {
+                    console.error("GHL Prod API Test Error:", error);
+                    updateStatusIndicator(
+                        "api-test-ghl-prod-status",
+                        "error",
+                        "ERROR",
+                    );
+                    displayDataInElement("api-test-ghl-prod-response", {
+                        status: "Error",
+                        message: error.message,
+                    });
+                    renderHttpStatus(500, "ghl-prod-api-status-code");
+                    updateCheckStatus(checkKey, "error");
+                }
+            }
+            async function testGhlDevApi() {
+                /* ... as before, with checkKey update and token wait ... */
+                const checkKey = "ghlDevApi";
+                try {
+                    let attempts = 0;
+                    while (!window.ghlToken && attempts < 20) {
+                        await sleep(200);
+                        attempts++;
+                    }
+                    if (!window.ghlToken)
+                        throw new Error(
+                            "Dev GHL Token not ready for API test.",
+                        );
+
+                    const result = await getDomainList("owNEzpbrfBjp4weSARXD");
+                    renderHttpStatus(
+                        result.status || (result.error ? 500 : 200),
+                        "ghl-dev-api-status-code",
+                    );
+                    displayDataInElement("api-test-ghl-dev-response", result);
+                    const hasError =
+                        result.error || (result.status && result.status >= 400);
+                    const statusType = hasError ? "error" : "success";
+                    const statusText = result.error
+                        ? "ERROR"
+                        : result.status && result.status >= 400
+                          ? `ERROR ${result.status}`
+                          : "OPERATIONAL";
+                    updateStatusIndicator(
+                        "api-test-ghl-dev-status",
+                        statusType,
+                        statusText,
+                    );
+                    updateCheckStatus(checkKey, statusType);
+                } catch (error) {
+                    console.error("GHL Dev API Test Error:", error);
+                    renderHttpStatus(500, "ghl-dev-api-status-code");
+                    updateStatusIndicator(
+                        "api-test-ghl-dev-status",
+                        "error",
+                        "ERROR",
+                    );
+                    displayDataInElement("api-test-ghl-dev-response", {
+                        status: "Error",
+                        message: error.message,
+                    });
+                    updateCheckStatus(checkKey, "error");
+                }
+            }
+
+            async function loadTelemetryErrors() {
+                /* ... as before (multi-line meta) ... */
+                const TELEMETRY_COLLECTION = "errors";
+                document
+                    .getElementById("telemetry-firestore-link")
+                    .appendChild(
+                        createFirestoreLinkNode(TELEMETRY_COLLECTION, null),
+                    );
+                const listEl = document.getElementById("telemetry-errors-list");
+                listEl.innerHTML = "";
+
+                try {
+                    const querySnapshot = await firestore
+                        .collection(TELEMETRY_COLLECTION)
+                        .orderBy("lastCalled", "desc")
+                        .limit(100)
+                        .get();
+                    if (querySnapshot.empty) {
+                        listEl.innerHTML = "<p>No errors found. Great!</p>";
+                        updateStatusIndicator(
+                            "telemetry-status",
+                            "success",
+                            "NO ERRORS",
+                        );
+                        return;
+                    }
+                    querySnapshot.forEach((doc) => {
+                        const error = doc.data();
+                        const entryDiv = document.createElement("div");
+                        entryDiv.className = "log-entry";
+                        const firestoreDocLink = createFirestoreLinkNode(
+                            TELEMETRY_COLLECTION,
+                            doc.id,
+                            `${doc.id.substring(0, 6)}...`,
+                        ).outerHTML;
+                        entryDiv.innerHTML = `
+                        <span class="log-message">${error.formattedMessage?.replace(/</g, "<").replace(/>/g, ">") || "No message"}</span>
+                        <div class="log-meta">
+                            <span><strong>Last:</strong> ${formatFirebaseTimestamp(error.lastCalled)}</span>
+                            <span><strong>Times:</strong> ${error.timesCalled || 1}</span>
+                            <span><strong>Loc:</strong> ${error.location || "N/A"}</span>
+                            <span><strong>Doc:</strong> ${firestoreDocLink}</span>
+                        </div>
+                        ${error.stackTrace ? `<pre class="log-stacktrace">${error.stackTrace.replace(/</g, "<").replace(/>/g, ">")}</pre>` : ""}
+                    `;
+                        listEl.appendChild(entryDiv);
+                    });
+                    updateStatusIndicator(
+                        "telemetry-status",
+                        "neutral",
+                        `${querySnapshot.size} ENTRIES`,
+                    );
+                } catch (error) {
+                    console.error("Error loading telemetry errors:", error);
+                    listEl.innerHTML = `<p>Error loading telemetry: ${error.message}</p>`;
+                    updateStatusIndicator("telemetry-status", "error", "ERROR");
+                }
+            }
+
+            document.addEventListener("DOMContentLoaded", async () => {
+                registerCheck("ghAction", "GitHub Action");
+                registerCheck("devJwt", "Developer JWT");
+                registerCheck("prodJwt", "Production JWT");
+                registerCheck("firebaseApi", "Firebase API");
+                registerCheck("ghlProdApi", "GHL Prod API");
+                registerCheck("ghlDevApi", "GHL Dev API");
+
+                let firebaseReadyAttempts = 0;
+                while (
+                    typeof firestore === "undefined" &&
+                    firebaseReadyAttempts < 50
+                ) {
+                    await sleep(100);
+                    firebaseReadyAttempts++;
+                }
+                if (typeof firestore === "undefined") {
+                    alert(
+                        "Firebase (firestore) is not initialized. Dashboard cannot load data.",
+                    );
+                    Object.keys(dashboardCheckState.checks).forEach((key) =>
+                        updateCheckStatus(key, "error"),
+                    );
+                    updateStatusIndicator(
+                        "dashboard-summary-status",
+                        "error",
+                        "FATAL ERROR",
+                    );
+                    document.getElementById(
+                        "dashboard-summary-text",
+                    ).textContent =
+                        "Firebase failed to initialize. Dashboard inoperable.";
+                    return;
+                }
+
+                await loadDevJwtStatus();
+                await loadProdJwtStatus();
+
+                Promise.allSettled([
+                    loadGitHubActionStatus(),
+                    testFirebaseApi(),
+                    testGhlProdApi(),
+                    testGhlDevApi(),
+                    loadTelemetryErrors(),
+                ]).then((results) => {
+                    results.forEach(
+                        (r) =>
+                            r.status === "rejected" &&
+                            console.warn(
+                                "A panel load promise rejected:",
+                                r.reason,
+                            ),
+                    );
+                    updateOverallSummary();
+                });
+            });
+        </script>
+    </body>
+</html>
