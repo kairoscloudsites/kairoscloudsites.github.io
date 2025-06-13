@@ -1,13 +1,19 @@
-<!doctype html>
-<title>Kairos Cloud Sites</title>
 <!-- This is a barebones wrapper for all traffic going through sites.kairoscloud.io -->
-<!-- The directory structure looks like this:
+<!-- Here's what an example URL looks like: https://sites.kairoscloud.io/5PZirIEPZJaceNChAJFq?&locationID=owNEzpbrfBjp4weSARXD&campaignID=7583dd9a464 -->
+<!-- It ultimately embeds this: https://app.kairoscloud.io/v2/preview/5PZirIEPZJaceNChAJFq  -->
+<!-- Why have all this iframe overhead? GoHighLevel doesn't let us run a custom script in every page. So we use an iframe to inject our tracking script-->
+<!-- Actually, we use multiple iframes. Since the initial one is on Github pages, it's cross-origin, and the browser won't let it reach into the iframe. So we use a proxy page: app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2. It's same-origin as the preview pages we're embedding, and we control it. So we can communicate with its parent page, and modify its child page-->
+<!-- The embed/directory structure looks like this:
     – sites.kairoscloud.io/404.html (this document)
-        – app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2?baseURL=...
-            – app.kairoscloud.io/v2/preview/...
+        – app.kairoscloud.io/v2/preview/s04iG3TiqVlVb6BsSEl2?baseURL=...(sites_embed.html). For forms, it's cdn.kairoscloud.io/widget/form/WKzNHzEs0vwaY4hOpKLK?baseURL=... (forms_embed.html)
+            – app.kairoscloud.io/v2/preview/... (the actual page). For forms, it's cdn.kairoscloud.io/widget/form/...
     The middle page is a proxy that allows us to skirt around cross-origin issues
     3/19/25 update: we are doing the same for GHL forms (sites.kairoscloud.io/forms -> cdn.kairoscloud.io/widget/form)
--->
+    Example Form URL: https://sites.kairoscloud.io/forms/hn1vNmCF1fd7aV3BvRvd?&locationID=owNEzpbrfBjp4weSARXD&campaignID=89ce2799c97
+    It ultimately embeds this: https://cdn.kairoscloud.io/widget/form/WKzNHzEs0vwaY4hOpKLK?baseURL=...
+    -->
+<!doctype html>
+<title>Kairos Cloud Sites</title>
 <link
     rel="icon"
     href="https://kairoscloud.github.io/main/Assets/favicon.png"
