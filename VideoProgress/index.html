@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Video Render Progress</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                --green: #28a745;
+                --blue: #007bff;
+                --light-gray: #f0f2f5;
+                --gray: #6c757d;
+                --border-color: #dee2e6;
+                --white: #ffffff;
+                --black: #212529;
+            }
+
+            body {
+                font-family: "Poppins", sans-serif;
+                background-color: var(--light-gray);
+                color: var(--black);
+                margin: 0;
+                padding: 2rem;
+                display: flex;
+                justify-content: center;
+                align-items: flex-start;
+                min-height: 100vh;
+            }
+
+            .container {
+                background-color: var(--white);
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+                padding: 2.5rem;
+                max-width: 500px;
+                width: 100%;
+                text-align: center;
+            }
+
+            h1 {
+                margin-top: 0;
+                margin-bottom: 2rem;
+                color: var(--black);
+            }
+
+            .error-message {
+                color: #dc3545;
+                background-color: #f8d7da;
+                border: 1px solid #f5c6cb;
+                padding: 1rem;
+                border-radius: 6px;
+            }
+
+            .progress-stepper {
+                list-style: none;
+                padding-left: 0;
+                margin: 0;
+                text-align: left;
+            }
+
+            .step {
+                display: flex;
+                align-items: flex-start;
+                position: relative;
+            }
+
+            /* The vertical connecting line */
+            .step:not(:last-child)::before {
+                content: "";
+                position: absolute;
+                /* Positioned to be centered with the new smaller circle */
+                left: 16.5px; /* (36px circle / 2) - (3px line / 2) */
+                top: 36px; /* Start after the circle */
+                width: 3px; /* --- MODIFIED: Thicker line --- */
+                height: calc(100% - 20px);
+                background-color: var(--border-color);
+                transition: background-color 0.3s ease;
+            }
+
+            .step.complete:not(:last-child)::before {
+                background-color: var(--green);
+            }
+
+            .step-indicator {
+                flex-shrink: 0;
+                margin-right: 1.5rem;
+                position: relative;
+            }
+
+            .circle {
+                width: 36px; /* --- MODIFIED: Smaller circle --- */
+                height: 36px; /* --- MODIFIED: Smaller circle --- */
+                border-radius: 50%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                font-weight: 600;
+                font-size: 1rem; /* Adjusted for smaller circle */
+                transition: all 0.3s ease;
+                position: relative; /* Needed for spinner pseudo-element */
+
+                /* Default/Not Started State */
+                background-color: var(--white);
+                border: 2px solid var(--border-color);
+                color: var(--gray);
+            }
+
+            /* --- MODIFIED: Spinner logic for non-rotating text --- */
+            /* Static appearance of the circle while in progress */
+            .step.in-progress .circle {
+                color: var(--black);
+                border-color: var(
+                    --border-color
+                ); /* Light gray border underneath spinner */
+            }
+
+            /* The spinning overlay */
+            .step.in-progress .circle::before {
+                content: "";
+                position: absolute;
+                top: -2px; /* Half of its own border-width to align */
+                left: -2px; /* Half of its own border-width to align */
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                border: 2px solid transparent;
+                border-top-color: var(--blue);
+                animation: spin 1s linear infinite;
+            }
+
+            .step.complete .circle {
+                background-color: var(--green);
+                border-color: var(--green);
+                color: var(--white);
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .step-content {
+                padding-top: 0.3rem; /* Adjusted for smaller circle */
+                padding-bottom: 2rem;
+            }
+
+            .step-title {
+                font-weight: 600;
+                margin: 0;
+            }
+
+            a {
+                color: var(--blue);
+                text-decoration: none;
+            }
+
+            .step-details {
+                margin-top: 0.75rem;
+                color: var(--gray);
+                font-size: 0.9rem;
+                display: none; /* Hidden by default */
+            }
+
+            .step-details a {
+                color: var(--blue);
+                font-weight: 600;
+                text-decoration: none;
+            }
+
+            .step-details a:hover {
+                text-decoration: underline;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Checking Render Status...</h1>
+
+            <ol class="progress-stepper">
+                <!-- Step 1: Always complete -->
+                <li id="step1" class="step complete">
+                    <div class="step-indicator">
+                        <div class="circle">1</div>
+                    </div>
+                    <div class="step-content">
+                        <p class="step-title">Video selected</p>
+                    </div>
+                </li>
+
+                <!-- Step 2: Render -->
+                <li id="step2" class="step">
+                    <div class="step-indicator">
+                        <div class="circle">2</div>
+                    </div>
+                    <div class="step-content">
+                        <p id="step2-title" class="step-title">
+                            Video rendered
+                        </p>
+                    </div>
+                </li>
+
+                <!-- Step 3: Media Library -->
+                <li id="step3" class="step">
+                    <div class="step-indicator">
+                        <div class="circle">3</div>
+                    </div>
+                    <div class="step-content">
+                        <p class="step-title">Video added to media library</p>
+                        <div id="step3-details" class="step-details">
+                            <!-- Content injected by JavaScript -->
+                        </div>
+                    </div>
+                </li>
+            </ol>
+
+            <div id="error-container"></div>
+        </div>
+
+        <!-- Firebase App (the core Firebase SDK) and Firestore must be included -->
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+        <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const params = new URLSearchParams(window.location.search);
+                const shotstackId = params.get("id");
+                const locationId = params.get("location");
+
+                const errorContainer =
+                    document.getElementById("error-container");
+                if (!shotstackId || !locationId) {
+                    errorContainer.innerHTML = `
+                    <p class="error-message">
+                        <strong>Error:</strong> URL parameters 'id' and 'location' are required.
+                        <br>
+                        Example: ?id=your-video-id&location=your-location-id
+                    </p>`;
+                    document.querySelector("h1").textContent =
+                        "Configuration Error";
+                    return;
+                }
+
+                // --- DOM Element References ---
+                const step2 = document.getElementById("step2");
+                const step3 = document.getElementById("step3");
+                const step2Title = document.getElementById("step2-title");
+                const step3Details = document.getElementById("step3-details");
+
+                const videoUrl = `https://shotstack-api-v1-output.s3.ap-southeast-2.amazonaws.com/rgrqdk03ju/${shotstackId}.mp4`;
+
+                /**
+                 * Changes the visual state of a step.
+                 * @param {HTMLElement} stepElement The step <li> element.
+                 * @param {'in-progress' | 'complete'} state The new state.
+                 */
+                function setStepState(stepElement, state) {
+                    stepElement.classList.remove("in-progress", "complete");
+                    stepElement.classList.add(state);
+                }
+
+                /**
+                 * Polls every 3 seconds to check if the Shotstack render is complete.
+                 */
+                async function checkRenderStatus() {
+                    setStepState(step2, "in-progress");
+
+                    const intervalId = setInterval(async () => {
+                        try {
+                            // Use a HEAD request for efficiency - we don't need the file content
+                            const response = await fetch(videoUrl, {
+                                method: "HEAD",
+                            });
+
+                            if (response.ok) {
+                                clearInterval(intervalId);
+                                console.log(
+                                    "Step 2 Complete: Video is rendered.",
+                                );
+                                setStepState(step2, "complete");
+
+                                // Link-ify the title text
+                                step2Title.innerHTML = `<a href="${videoUrl}" target="_blank" rel="noopener noreferrer">Video rendered</a>`;
+
+                                // Proceed to the next check
+                                checkFirestoreStatus();
+                            } else {
+                                console.log("Polling for video render...");
+                            }
+                        } catch (error) {
+                            console.error(
+                                "Polling error for render status:",
+                                error,
+                            );
+                        }
+                    }, 3000);
+                }
+
+                /**
+                 * Polls every 3 seconds to check if the video has been added to the media library (Firestore).
+                 * This function is only called after checkRenderStatus is successful.
+                 */
+                async function checkFirestoreStatus() {
+                    setStepState(step3, "in-progress");
+
+                    // Wait for Firebase to initialize from the external script
+                    await new Promise((resolve) => {
+                        const checkFirebase = setInterval(() => {
+                            if (window.firebase && window.firestore) {
+                                clearInterval(checkFirebase);
+                                resolve();
+                            }
+                        }, 100);
+                    });
+
+                    const db = window.firestore;
+                    const docRef = db
+                        .collection("video_uploads")
+                        .doc(shotstackId);
+
+                    const intervalId = setInterval(async () => {
+                        try {
+                            const doc = await docRef.get();
+
+                            if (doc.exists) {
+                                clearInterval(intervalId);
+                                const data = doc.data();
+                                console.log(
+                                    "Step 3 Complete: Document found in Firestore.",
+                                    data,
+                                );
+
+                                setStepState(step3, "complete");
+
+                                // Display the final details
+                                step3Details.innerHTML = `
+                                FileID: ${data.fileId}.
+                                <a href="https://app.kairoscloud.io/v2/location/${locationId}/media-storage" target="_blank" rel="noopener noreferrer">Open Media Library</a>
+                            `;
+                                step3Details.style.display = "block";
+                                document.querySelector("h1").textContent =
+                                    "Render Complete!";
+                            } else {
+                                console.log(
+                                    "Polling for Firestore document...",
+                                );
+                            }
+                        } catch (error) {
+                            console.error(
+                                "Polling error for Firestore status:",
+                                error,
+                            );
+                            // Optional: Stop polling on critical firestore errors
+                            // clearInterval(intervalId);
+                        }
+                    }, 3000);
+                }
+
+                // Start the process
+                checkRenderStatus();
+            });
+        </script>
+    </body>
+</html>
