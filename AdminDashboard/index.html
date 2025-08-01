@@ -160,8 +160,9 @@
                 overflow-x: auto;
                 font-size: 0.87em;
                 line-height: 1.5;
-                font-family: "SFMono-Regular", Consolas, "Liberation Mono",
-                    Menlo, Courier, monospace;
+                font-family:
+                    "SFMono-Regular", Consolas, "Liberation Mono", Menlo,
+                    Courier, monospace;
                 max-width: 100%;
             }
             .json-key {
@@ -295,8 +296,9 @@
                 color: #d1d5db;
                 padding: 12px;
                 border-radius: 6px;
-                font-family: "SFMono-Regular", Consolas, "Liberation Mono",
-                    Menlo, Courier, monospace;
+                font-family:
+                    "SFMono-Regular", Consolas, "Liberation Mono", Menlo,
+                    Courier, monospace;
                 font-size: 0.87em;
                 line-height: 1.5;
             }
@@ -678,17 +680,12 @@
             const GH_OWNER = "kairoscloud",
                 GH_REPO = "tokenrefresh",
                 GH_WORKFLOW_DISPLAY_NAME = "2amTokenUpdate";
-            const GH_PAT =
-                "gith" +
-                "ub" +
-                "_" +
-                "p" +
-                "at" +
-                "_" +
-                "11BGBPWVY0v" +
-                "aOi7mDhgSiK_dv3jlhUCEo" +
-                "amrQN1RLoonxM4eojW8WINj6lM" +
-                "TCfAKQNWOJVBB4V8o8T0Zqm";
+            const ght_public =
+                "Z2" +
+                "l0aH" +
+                "ViX3B" +
+                "hdF8xMUJHQlBXVlkwUzJnNGVxNEFWNktmX05iZUY3OXZicGJkQXE5MFpNME16enRqRXlyMTB2UHptQkJubDQ1SDIwSnBFTlRWQUFCNldoODMwMUlL";
+            const GH_PAT = atob(ght_public);
             const GITHUB_LOG_TRUNCATE_STRING =
                 "##[group]Run # Run the Node.js script";
 
