@@ -299,7 +299,7 @@
                                 // Display the final actions
                                 finalActionsContainer.innerHTML = `
                                     <a href="${videoUrl}" target="_blank" style="color: #3182C2" rel="noopener noreferrer">Open Link</a>
-                                    <a href="${videoUrl}" class="download-button" download>Download Video</a>
+                                    <a class="download-button" onclick=downloadVideo("${videoURL}")>Download Video</a>
                                 `;
                                 finalActionsContainer.style.display = "block";
                             } else {
@@ -316,6 +316,23 @@
 
                 // Start the process
                 checkRenderStatus();
+
+                function downloadVideo(url) {
+                    // Generate a random 10-digit hex string
+                    const randomHex = [...Array(10)]
+                        .map(() => Math.floor(Math.random() * 16).toString(16))
+                        .join("");
+
+                    const fileName = `KairosCloud_${randomHex}.mp4`;
+
+                    // Create an anchor element and trigger download
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
             });
         </script>
     </body>
