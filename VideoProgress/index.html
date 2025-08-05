@@ -319,21 +319,36 @@
             });
         </script>
         <script>
-            function downloadVideo(url) {
-                // Generate a random 10-digit hex string
-                const randomHex = [...Array(10)]
-                    .map(() => Math.floor(Math.random() * 16).toString(16))
-                    .join("");
+            async function downloadVideo(url) {
+                try {
+                    // Fetch the video as a Blob
+                    const response = await fetch(url);
+                    const blob = await response.blob();
 
-                const fileName = `KairosCloud_${randomHex}.mp4`;
+                    // Generate a random 10-digit hexadecimal string
+                    const randomHex = [
+                        ...crypto.getRandomValues(new Uint8Array(5)),
+                    ]
+                        .map((b) => b.toString(16).padStart(2, "0"))
+                        .join("");
 
-                // Create an anchor element and trigger download
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                    const filename = `KairosCloud_${randomHex}.mp4`;
+
+                    // Create a link element
+                    const link = document.createElement("a");
+                    link.href = window.URL.createObjectURL(blob);
+                    link.download = filename;
+
+                    // Append the link, trigger click, then remove
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    // Clean up
+                    window.URL.revokeObjectURL(link.href);
+                } catch (error) {
+                    console.error("Error downloading video:", error);
+                }
             }
         </script>
     </body>
