@@ -299,7 +299,7 @@
                                 // Display the final actions
                                 finalActionsContainer.innerHTML = `
                                     <a href="${videoUrl}" target="_blank" style="color: #3182C2" rel="noopener noreferrer">Open Link</a>
-                                    <a class="download-button" onclick=downloadVideo("${videoUrl}")>Download Video</a>
+                                    <a href="${videoUrl}" class="download-button" download>Download Video</a>
                                 `;
                                 finalActionsContainer.style.display = "block";
                             } else {
@@ -317,39 +317,6 @@
                 // Start the process
                 checkRenderStatus();
             });
-        </script>
-        <script>
-            async function downloadVideo(url) {
-                try {
-                    // Fetch the video as a Blob
-                    const response = await fetch(url);
-                    const blob = await response.blob();
-
-                    // Generate a random 10-digit hexadecimal string
-                    const randomHex = [
-                        ...crypto.getRandomValues(new Uint8Array(5)),
-                    ]
-                        .map((b) => b.toString(16).padStart(2, "0"))
-                        .join("");
-
-                    const filename = `KairosCloud_${randomHex}.mp4`;
-
-                    // Create a link element
-                    const link = document.createElement("a");
-                    link.href = window.URL.createObjectURL(blob);
-                    link.download = filename;
-
-                    // Append the link, trigger click, then remove
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-
-                    // Clean up
-                    window.URL.revokeObjectURL(link.href);
-                } catch (error) {
-                    console.error("Error downloading video:", error);
-                }
-            }
         </script>
     </body>
 </html>
