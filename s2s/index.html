@@ -1,434 +1,638 @@
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+<script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
 <script>
-    const html = (strings, ...values) =>
-        strings.reduce((acc, str, i) => acc + str + (values[i] ?? ""), "");
-    let app = html`<!doctype html>
-        <html lang="en">
-            <head>
-                <meta charset="UTF-8" />
-                <meta
-                    name="viewport"
-                    content="width=device-width, initial-scale=1.0"
-                />
-                <title>Send to School (Mockup)</title>
-                <link
-                    rel="icon"
-                    href="https://kairoscloud.github.io/main/Assets/favicon.png"
-                    type="image/x-icon"
-                />
-                <style>
-                    :root {
-                        --font-family:
-                            -apple-system, BlinkMacSystemFont, "Segoe UI",
-                            Roboto, Helvetica, Arial, sans-serif;
-                        --background-color: #ffffff;
-                        --text-primary: #1c1c1e;
-                        --text-secondary: #6c757d;
-                        --border-color: #ced4da;
-                        --input-bg: #f0f2f5;
-                        --button-bg: #4479ce;
-                        --button-text: #ffffff;
-                        --border-radius: 12px;
-                    }
+    (async () => {
+        let locationID;
+        let locationAccessKey;
 
-                    body {
-                        font-family: var(--font-family);
-                        background-color: var(--background-color);
-                        color: var(--text-primary);
-                        margin: 0;
-                        padding-top: 2rem;
-                        display: flex;
-                        justify-content: left;
-                        align-items: flex-start;
-                        padding-left: 3rem;
-                        overflow-y: hidden;
-                        box-sizing: none;
-                    }
+        while (!window.GlobalLocationAccessKey) {
+            // console.log("waiting for firebase");
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            locationID = window.GlobalLocationID; // set by globalFirebase
+            locationAccessKey = window.GlobalLocationAccessKey; // set by globalFirebase
+        }
+        let campaignList = [];
+        const html = (strings, ...values) =>
+            strings.reduce((acc, str, i) => acc + str + (values[i] ?? ""), "");
+        let app = html`<!doctype html>
+            <html lang="en">
+                <head>
+                    <meta charset="UTF-8" />
+                    <meta
+                        name="viewport"
+                        content="width=device-width, initial-scale=1.0"
+                    />
+                    <title>Send to School (Mockup)</title>
+                    <link
+                        rel="icon"
+                        href="https://kairoscloud.github.io/main/Assets/favicon.png"
+                        type="image/x-icon"
+                    />
+                    <style>
+                        :root {
+                            --font-family:
+                                -apple-system, BlinkMacSystemFont, "Segoe UI",
+                                Roboto, Helvetica, Arial, sans-serif;
+                            --background-color: #ffffff;
+                            --text-primary: #1c1c1e;
+                            --text-secondary: #6c757d;
+                            --border-color: #ced4da;
+                            --input-bg: #f0f2f5;
+                            --button-bg: #4479ce;
+                            --button-text: #ffffff;
+                            --border-radius: 12px;
+                        }
 
-                    .container {
-                        display: flex;
-                        gap: 4rem;
-                        width: 100%;
-                        max-width: 1200px;
-                    }
+                        body {
+                            font-family: var(--font-family);
+                            background-color: var(--background-color);
+                            color: var(--text-primary);
+                            margin: 0;
+                            /* CHANGE: Removed horizontal padding to make layout full-width. */
+                            padding: 2rem 0;
+                            display: flex;
+                            justify-content: center;
+                            box-sizing: border-box;
+                        }
 
-                    /* --- Main Content (Left Column) --- */
-                    .main-content {
-                        flex: 3;
-                        display: flex;
-                        flex-direction: column;
-                    }
+                        .container {
+                            display: flex;
+                            gap: 2rem;
+                            width: 100%;
+                            /* CHANGE: Removed max-width to let the container hug the screen edges. */
+                        }
 
-                    .main-content h1 {
-                        font-size: 2rem;
-                        font-weight: 700;
-                        margin-top: 0;
-                        margin-bottom: 2rem;
-                    }
+                        /* --- Main Content (Left Column) --- */
+                        .main-content {
+                            flex: 2 1 65%;
+                            display: flex;
+                            flex-direction: column;
+                            min-width: 0;
+                            /* CHANGE: Added padding here to keep content off the screen edge. */
+                            padding-left: 2rem;
+                        }
 
-                    .form-and-previews {
-                        display: flex;
-                        gap: 2rem;
-                    }
+                        .main-content h1 {
+                            font-size: 2rem;
+                            font-weight: 700;
+                            margin-top: 0;
+                            margin-bottom: 2rem;
+                        }
 
-                    .send-form {
-                        flex: 1;
-                        display: flex;
-                        flex-direction: column;
-                        gap: 1.5rem;
-                        max-width: 31vw;
-                    }
+                        .form-and-previews {
+                            display: flex;
+                            gap: 2rem;
+                            /* Ensures both columns stretch to the same height for alignment. */
+                            align-items: stretch;
+                        }
 
-                    .form-group {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 0.5rem;
-                    }
+                        .send-form {
+                            flex: 1 1 55%;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 1.5rem;
+                            min-width: 0;
+                        }
 
-                    .form-group label {
-                        font-weight: 600;
-                        font-size: 0.9rem;
-                    }
+                        /*
+                          REASON: This is the key change for the vertical alignment request.
+                          It selects the form group before "Additional Text" and applies a margin.
+                          'margin-bottom: auto' pushes all subsequent items to the bottom of the
+                          flex container, aligning the "Additional Text" box with the "Text Preview"
+                          box in the adjacent column.
+                        */
+                        .send-form .form-group:nth-of-type(4) {
+                            margin-bottom: auto;
+                        }
 
-                    .form-input,
-                    .form-textarea {
-                        width: 100%;
-                        padding: 0.8rem 1rem;
-                        border: 1px solid var(--border-color);
-                        border-radius: var(--border-radius);
-                        font-size: 1rem;
-                        font-family: var(--font-family);
-                        box-sizing: border-box;
-                    }
+                        .form-group {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 0.5rem;
+                        }
 
-                    .form-input::placeholder,
-                    .form-textarea::placeholder {
-                        color: var(--text-secondary);
-                    }
+                        .form-group label {
+                            font-weight: 600;
+                            font-size: 0.9rem;
+                        }
 
-                    .select-wrapper {
-                        position: relative;
-                    }
+                        .form-input,
+                        .form-textarea {
+                            width: 100%;
+                            padding: 0.8rem 1rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: var(--border-radius);
+                            font-size: 1rem;
+                            font-family: var(--font-family);
+                            box-sizing: border-box;
+                        }
 
-                    .form-select {
-                        appearance: none;
-                        -webkit-appearance: none;
-                        -moz-appearance: none;
-                        width: 100%;
-                        padding: 0.8rem 1rem;
-                        border: 1px solid var(--input-bg);
-                        background-color: var(--input-bg);
-                        border-radius: var(--border-radius);
-                        font-size: 1rem;
-                        color: var(--text-secondary);
-                        font-family: var(--font-family);
-                        cursor: pointer;
-                    }
+                        .form-input::placeholder,
+                        .form-textarea::placeholder {
+                            color: var(--text-secondary);
+                        }
 
-                    .select-wrapper::after {
-                        content: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
-                        position: absolute;
-                        right: 1rem;
-                        top: 50%;
-                        transform: translateY(-50%);
-                        pointer-events: none;
-                    }
+                        .select-wrapper {
+                            position: relative;
+                        }
 
-                    .form-textarea {
-                        height: 120px;
-                        resize: vertical;
-                        resize: none;
-                    }
+                        .form-select {
+                            appearance: none;
+                            -webkit-appearance: none;
+                            -moz-appearance: none;
+                            width: 100%;
+                            padding: 0.8rem 1rem;
+                            border: 1px solid var(--input-bg);
+                            background-color: var(--input-bg);
+                            border-radius: var(--border-radius);
+                            font-size: 1rem;
+                            color: var(--text-secondary);
+                            font-family: var(--font-family);
+                            cursor: pointer;
+                        }
 
-                    .form-actions {
-                        display: flex;
-                        gap: 1rem;
-                        align-items: center;
-                    }
+                        .select-wrapper::after {
+                            content: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+                            position: absolute;
+                            right: 1rem;
+                            top: 50%;
+                            transform: translateY(-50%);
+                            pointer-events: none;
+                        }
 
-                    .send-button {
-                        background-color: var(--button-bg);
-                        color: var(--button-text);
-                        font-weight: 600;
-                        border: none;
-                        padding: 0.8rem 2.5rem;
-                        border-radius: var(--border-radius);
-                        font-size: 1rem;
-                        cursor: pointer;
-                        margin-top: 23px;
-                        position: relative;
-                        left: 9.5vw;
-                    }
+                        .form-textarea {
+                            height: 120px;
+                            resize: vertical;
+                            resize: none;
+                        }
 
-                    /* --- Preview Panes --- */
-                    .previews {
-                        flex: 1.2;
-                        display: flex;
-                        flex-direction: column;
-                        gap: 1.5rem;
-                        margin-right: 16%;
-                        max-width: 38vw;
-                    }
+                        .form-actions {
+                            display: flex;
+                            gap: 1rem;
+                            align-items: flex-end;
+                            padding-top: 1rem;
+                        }
 
-                    .preview-group {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 0.5rem;
-                    }
+                        .send-button {
+                            background-color: var(--button-bg);
+                            color: var(--button-text);
+                            font-weight: 600;
+                            border: none;
+                            padding: 0.8rem 2.5rem;
+                            border-radius: var(--border-radius);
+                            font-size: 1rem;
+                            cursor: pointer;
+                            margin-left: auto;
+                        }
 
-                    .preview-group label {
-                        font-weight: 600;
-                        font-size: 0.9rem;
-                    }
+                        /* --- Preview Panes --- */
+                        .previews {
+                            flex: 1 1 45%;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 1.5rem;
+                            min-width: 0;
+                        }
 
-                    .email-preview-box {
-                        background-color: var(--input-bg);
-                        border-radius: var(--border-radius);
-                        height: 316px;
-                    }
+                        .preview-group {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 0.5rem;
+                        }
 
-                    .text-preview-box {
-                        background-color: var(--background-color);
-                        border: 1px solid var(--border-color);
-                        border-radius: var(--border-radius);
-                        height: 116px;
-                    }
+                        .preview-group label {
+                            font-weight: 600;
+                            font-size: 0.9rem;
+                        }
 
-                    /* --- Sidebar (Right Column) --- */
-                    .sidebar {
-                        flex: 1.5;
-                        min-width: 21%;
-                        padding-left: 2rem;
-                        border-left: 1px solid #e5e5e5;
-                        height: 100vh;
-                        position: absolute;
-                        right: 24px;
-                        overflow-y: scroll;
-                        height: 95vh;
-                    }
+                        .email-preview-box {
+                            background-color: var(--input-bg);
+                            border-radius: var(--border-radius);
+                            height: 316px;
+                        }
 
-                    .sidebar-header {
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        margin-bottom: 2rem;
-                    }
+                        .text-preview-box {
+                            background-color: var(--background-color);
+                            border: 1px solid var(--border-color);
+                            border-radius: var(--border-radius);
+                            height: 116px;
+                        }
 
-                    .sidebar-header h2 {
-                        font-size: 2rem;
-                        font-weight: 700;
-                        margin: 0;
-                        display: inline-block;
-                    }
+                        /* --- Sidebar (Right Column) --- */
+                        .sidebar {
+                            flex: 1 1 35%;
+                            min-width: 280px;
+                            padding-left: 2rem;
+                            border-left: 1px solid #e5e5e5;
+                            max-height: 95vh;
+                            overflow-y: auto;
+                            /* CHANGE: Added padding here to keep content off the screen edge. */
+                            padding-right: 2rem;
+                        }
 
-                    .sidebar-header .count {
-                        font-size: 2rem;
-                        font-weight: 400;
-                        color: var(--text-secondary);
-                        margin-left: 0.75rem;
-                    }
+                        .sidebar-header {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            margin-bottom: 2rem;
+                        }
 
-                    .scheduled-list {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 1rem;
-                    }
+                        .sidebar-header h2 {
+                            font-size: 2rem;
+                            font-weight: 700;
+                            margin: 0;
+                            display: inline-block;
+                        }
 
-                    .scheduled-item {
-                        background-color: var(--background-color);
-                        border: 1px solid var(--border-color);
-                        border-radius: var(--border-radius);
-                        padding: 1rem;
-                    }
+                        .sidebar-header .count {
+                            font-size: 2rem;
+                            font-weight: 400;
+                            color: var(--text-secondary);
+                            margin-left: 0.75rem;
+                        }
 
-                    .scheduled-item .subject {
-                        font-weight: 600;
-                        margin-bottom: 0.25rem;
-                    }
+                        .scheduled-list {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 1rem;
+                        }
 
-                    .scheduled-item .details {
-                        font-size: 0.9rem;
-                        color: var(--text-secondary);
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <main class="main-content">
-                        <h1>Send</h1>
-                        <div class="form-and-previews">
-                            <form class="send-form" action="#" method="post">
-                                <div class="form-group">
-                                    <label for="admin-email"
-                                        >Enter Administrator Email</label
-                                    >
-                                    <input
-                                        type="email"
-                                        id="admin-email"
-                                        name="admin_email"
-                                        class="form-input"
-                                        value="administrator@school.com"
-                                    />
-                                </div>
+                        .scheduled-item {
+                            background-color: var(--background-color);
+                            border: 1px solid var(--border-color);
+                            border-radius: var(--border-radius);
+                            padding: 1rem;
+                        }
 
-                                <div class="form-group">
-                                    <label for="campaign"
-                                        >Select Campaign</label
-                                    >
-                                    <div class="select-wrapper">
-                                        <select
-                                            id="campaign"
-                                            name="campaign"
-                                            class="form-select"
-                                        >
-                                            <option>Example Campaign</option>
-                                        </select>
-                                    </div>
-                                </div>
+                        .scheduled-item .subject {
+                            font-weight: 600;
+                            margin-bottom: 0.25rem;
+                        }
 
-                                <div class="form-group">
-                                    <label for="email-template"
-                                        >Select Email Template</label
-                                    >
-                                    <div class="select-wrapper">
-                                        <select
-                                            id="email-template"
-                                            name="email_template"
-                                            class="form-select"
-                                        >
-                                            <option>Example Template</option>
-                                        </select>
-                                    </div>
-                                </div>
+                        .scheduled-item .details {
+                            font-size: 0.9rem;
+                            color: var(--text-secondary);
+                        }
 
-                                <div class="form-group">
-                                    <label for="text-template"
-                                        >Select Text Template</label
-                                    >
-                                    <div class="select-wrapper">
-                                        <select
-                                            id="text-template"
-                                            name="text_template"
-                                            class="form-select"
-                                        >
-                                            <option>Example Template</option>
-                                        </select>
-                                    </div>
-                                </div>
+                        /*
+                          --- MEDIA QUERIES FOR RESPONSIVE DESIGN ---
+                          The following rules adjust the layout for tablet and mobile screen sizes.
+                        */
 
-                                <div class="form-group">
-                                    <label for="additional-text"
-                                        >Additional Text</label
-                                    >
-                                    <textarea
-                                        id="additional-text"
-                                        name="additional_text"
-                                        class="form-textarea"
-                                    >
-Hello Jane, please send this to all Senior parents.</textarea
-                                    >
-                                </div>
+                        /* Breakpoint 1: Tablets and smaller desktops (<= 1024px) */
+                        @media (max-width: 1024px) {
+                            .container {
+                                flex-direction: column;
+                                gap: 3rem;
+                            }
 
-                                <div class="form-actions">
+                            /* Adjust padding for stacked layout to provide consistent spacing. */
+                            .main-content,
+                            .sidebar {
+                                padding-left: 1.5rem;
+                                padding-right: 1.5rem;
+                            }
+
+                            .sidebar {
+                                border-left: none;
+                                border-top: 1px solid #e5e5e5;
+                                padding-top: 2rem;
+                                max-height: none;
+                                overflow-y: visible;
+                            }
+                        }
+
+                        /* Breakpoint 2: Mobile phones (<= 768px) */
+                        @media (max-width: 768px) {
+                            body {
+                                padding: 1.5rem 0;
+                            }
+
+                            /* Further reduce padding for small screens. */
+                            .main-content,
+                            .sidebar {
+                                padding-left: 1rem;
+                                padding-right: 1rem;
+                            }
+
+                            .main-content h1,
+                            .sidebar-header h2,
+                            .sidebar-header .count {
+                                font-size: 1.75rem;
+                            }
+
+                            .form-and-previews {
+                                flex-direction: column;
+                                gap: 2.5rem;
+                            }
+
+                            /* Reset the alignment hack, as columns are now stacked. */
+                            .send-form .form-group:nth-of-type(4) {
+                                margin-bottom: 0;
+                            }
+
+                            .form-actions {
+                                flex-direction: column;
+                                align-items: stretch;
+                            }
+
+                            .send-button {
+                                margin-left: 0;
+                                padding: 1rem;
+                            }
+
+                            .form-actions .form-input {
+                                width: 100% !important;
+                            }
+                        }
+
+                        #adminContactContainer {
+                            height: 20px;
+                            background-color: #f0f2f5;
+                            margin-top: -15px;
+                            margin-bottom: 10px;
+                            padding: 3px;
+                            padding-left: 16px;
+                            border-radius: 6px;
+                            color: #6c757d;
+                        }
+
+                        #arw {
+                            margin-right: 6px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <main class="main-content">
+                            <h1>Send</h1>
+                            <div class="form-and-previews">
+                                <form
+                                    class="send-form"
+                                    action="#"
+                                    method="post"
+                                >
                                     <div class="form-group">
-                                        <label for="send-on">Send on</label>
+                                        <label for="admin-email"
+                                            >Administrator Email</label
+                                        >
                                         <input
-                                            type="text"
-                                            id="send-on"
-                                            name="send_on"
+                                            type="email"
+                                            id="admin-email"
+                                            name="admin_email"
                                             class="form-input"
-                                            placeholder="MM/DD/YY  1:00 PM"
-                                            style="width: 180px"
+                                            placeholder="administrator@school.com"
+                                            oninput="handleAdminInput(this.value)"
                                         />
                                     </div>
-                                    <button type="submit" class="send-button">
-                                        Send
-                                    </button>
-                                </div>
-                            </form>
+                                    <div id="adminContactContainer"></div>
 
-                            <div class="previews">
-                                <div class="preview-group">
-                                    <label>Email Template Preview</label>
-                                    <div class="email-preview-box"></div>
-                                </div>
-                                <div class="preview-group">
-                                    <label>Text Template Preview</label>
-                                    <textarea
-                                        id="additional-text"
-                                        name="additional_text"
-                                        class="form-textarea"
-                                        style="height: 117px"
-                                    ></textarea>
-                                </div>
-                            </div>
-                        </div>
-                    </main>
+                                    <div class="form-group">
+                                        <label for="campaign"
+                                            >Select Campaign</label
+                                        >
+                                        <div class="select-wrapper">
+                                            <select
+                                                id="campaign"
+                                                name="campaign"
+                                                class="form-select"
+                                            >
+                                                ${await getCampaignList()}
+                                            </select>
+                                        </div>
+                                    </div>
 
-                    <aside class="sidebar">
-                        <div class="sidebar-header">
-                            <h2>Scheduled</h2>
-                            <span class="count">13</span>
-                        </div>
-                        <div class="scheduled-list">
-                            <div class="scheduled-item">
-                                <div class="subject">Hello!</div>
-                                <div class="details">
-                                    test@example.com, March 10, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Hello2!</div>
-                                <div class="details">
-                                    help@website.site, May 29, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Email subject</div>
-                                <div class="details">
-                                    address@site.com, October 9, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Hello!</div>
-                                <div class="details">
-                                    test@example.com, March 10, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Hello2!</div>
-                                <div class="details">
-                                    help@website.site, May 29, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Email subject</div>
-                                <div class="details">
-                                    address@site.com, October 9, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Hello!</div>
-                                <div class="details">
-                                    test@example.com, March 10, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Hello!</div>
-                                <div class="details">
-                                    test@example.com, March 10, 2024
-                                </div>
-                            </div>
-                            <div class="scheduled-item">
-                                <div class="subject">Hello!</div>
-                                <div class="details">
-                                    test@example.com, March 10, 2024
-                                </div>
-                            </div>
-                        </div>
-                    </aside>
-                </div>
-            </body>
-        </html>`;
+                                    <!-- <div class="form-group">
+                                        <label for="email-template"
+                                            >Select Email Template</label
+                                        >
+                                        <div class="select-wrapper">
+                                            <select
+                                                id="email-template"
+                                                name="email_template"
+                                                class="form-select"
+                                            >
+                                                <option>Example Template</option>
+                                            </select>
+                                        </div>
+                                    </div> -->
 
-    document.write(app);
+                                    <!-- <div class="form-group">
+                                        <label for="text-template"
+                                            >Select Text Template</label
+                                        >
+                                        <div class="select-wrapper">
+                                            <select
+                                                id="text-template"
+                                                name="text_template"
+                                                class="form-select"
+                                            >
+                                                <option>Example Template</option>
+                                            </select>
+                                        </div>
+                                    </div> -->
+
+                                    <div class="form-group">
+                                        <label for="additional-text"
+                                            >Additional Text</label
+                                        >
+                                        <textarea
+                                            id="additional-text"
+                                            name="additional_text"
+                                            class="form-textarea"
+                                        >
+Hello Jane, please send this to all Senior parents.</textarea
+                                        >
+                                    </div>
+
+                                    <div class="form-actions">
+                                        <div class="form-group">
+                                            <label for="send-on">Send on</label>
+                                            <input
+                                                type="datetime-local"
+                                                id="send-on"
+                                                name="send_on"
+                                                class="form-input"
+                                                placeholder="MM/DD/YY  1:00 PM"
+                                                style="width: 230px"
+                                            />
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            class="send-button"
+                                        >
+                                            Send
+                                        </button>
+                                    </div>
+                                </form>
+
+                                <div class="previews">
+                                    <div class="preview-group">
+                                        <label>Email Template Preview</label>
+                                        <div class="email-preview-box"></div>
+                                    </div>
+                                    <div class="preview-group">
+                                        <label>Text Template Preview</label>
+                                        <textarea
+                                            id="additional-text"
+                                            name="additional_text"
+                                            class="form-textarea"
+                                            style="height: 117px"
+                                        ></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+
+                        <aside class="sidebar">
+                            <div class="sidebar-header">
+                                <h2>Scheduled</h2>
+                                <span class="count">13</span>
+                            </div>
+                            <div class="scheduled-list">
+                                <div class="scheduled-item">
+                                    <div class="subject">Hello!</div>
+                                    <div class="details">
+                                        test@example.com, March 10, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Hello2!</div>
+                                    <div class="details">
+                                        help@website.site, May 29, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Email subject</div>
+                                    <div class="details">
+                                        address@site.com, October 9, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Hello!</div>
+                                    <div class="details">
+                                        test@example.com, March 10, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Hello2!</div>
+                                    <div class="details">
+                                        help@website.site, May 29, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Email subject</div>
+                                    <div class="details">
+                                        address@site.com, October 9, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Hello!</div>
+                                    <div class="details">
+                                        test@example.com, March 10, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Hello!</div>
+                                    <div class="details">
+                                        test@example.com, March 10, 2024
+                                    </div>
+                                </div>
+                                <div class="scheduled-item">
+                                    <div class="subject">Hello!</div>
+                                    <div class="details">
+                                        test@example.com, March 10, 2024
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+                </body>
+            </html>`;
+
+        document.write(app);
+
+        // begin js
+
+        const adminContactContainer = document.getElementById(
+            "adminContactContainer",
+        );
+
+        let adminTimeout;
+
+        window.handleAdminInput = function handleAdminInput(value) {
+            clearTimeout(adminTimeout);
+            adminContactContainer.innerHTML = "Searching...";
+            if (value.length < 3) {
+                adminContactContainer.innerHTML =
+                    'Please enter an email address. <span id="arw">➡️</span>';
+                return;
+            }
+            adminTimeout = setTimeout(async () => {
+                const contact = await getAdminContact(value);
+                if (contact) {
+                    adminContactContainer.innerHTML = `${contact.firstName} ${
+                        contact.lastName
+                    }`;
+                } else {
+                    adminContactContainer.innerHTML =
+                        'No contact found. <span id="arw">➡️</span>';
+                }
+            }, 500);
+        };
+
+        window.getAdminContact = async function getAdminContact(query) {
+            const url = "https://services.leadconnectorhq.com/contacts/search";
+            const options = {
+                method: "POST",
+                headers: {
+                    Authorization: "Bearer " + locationAccessKey,
+                    Version: "2021-07-28",
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                },
+                body: `{
+            "pageLimit" : 1,
+            "locationId" : "${locationID}",
+            "query" : "${query.replace(/"/g, '\\"')}"
+            }`,
+            };
+
+            try {
+                const response = await fetch(url, options);
+                const data = await response.json();
+                console.log(data);
+                // response looks like this:
+                // {
+                //     "contacts": [],
+                //     "total": 0,
+                //     "traceId": "f86e5ce5-cc8b-4702-bb4d-e2ce8fb49d67"
+                // }
+                // return first contact
+                return data.contacts[0];
+            } catch (error) {
+                console.error(error);
+            }
+        };
+
+        async function getCampaignList() {
+            let returnVar = `<option value="" disabled selected>Select a campaign</option>`;
+            const campaignsRef = firestore
+                .collection("campaigns_restructured")
+                .doc(locationID)
+                .collection("campaigns");
+            const snapshot = await campaignsRef.get();
+            snapshot.forEach((doc) => {
+                campaignList.push({
+                    id: doc.id,
+                    data: doc.data(),
+                });
+                // add it to the dropdown
+                returnVar += `<option value="${doc.id}">${doc.data().name} &nbsp; &nbsp; &nbsp;</option>`;
+            });
+            console.log(campaignList);
+            return returnVar;
+        }
+    })();
 </script>
