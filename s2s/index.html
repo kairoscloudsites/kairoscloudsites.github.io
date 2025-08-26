@@ -102,7 +102,7 @@
                           flex container, aligning the "Additional Text" box with the "Text Preview"
                           box in the adjacent column.
                         */
-                        .send-form .form-group:nth-of-type(4) {
+                        .send-form .form-group:nth-of-type(5) {
                             margin-bottom: auto;
                         }
 
@@ -206,7 +206,7 @@
                             font-size: 0.9rem;
                         }
 
-                        .email-preview-box {
+                        #email-preview-box {
                             background-color: var(--input-bg);
                             border-radius: var(--border-radius);
                             height: 316px;
@@ -328,7 +328,7 @@
                             }
 
                             /* Reset the alignment hack, as columns are now stacked. */
-                            .send-form .form-group:nth-of-type(4) {
+                            .send-form .form-group:nth-of-type(5) {
                                 margin-bottom: 0;
                             }
 
@@ -403,7 +403,7 @@
                                         </div>
                                     </div>
 
-                                    <!-- <div class="form-group">
+                                    <div class="form-group">
                                         <label for="email-template"
                                             >Select Email Template</label
                                         >
@@ -413,10 +413,12 @@
                                                 name="email_template"
                                                 class="form-select"
                                             >
-                                                <option>Example Template</option>
+                                                <option>
+                                                    Example Template
+                                                </option>
                                             </select>
                                         </div>
-                                    </div> -->
+                                    </div>
 
                                     <!-- <div class="form-group">
                                         <label for="text-template"
@@ -470,7 +472,7 @@ Hello Jane, please send this to all Senior parents.</textarea
                                 <div class="previews">
                                     <div class="preview-group">
                                         <label>Email Template Preview</label>
-                                        <div class="email-preview-box"></div>
+                                        <div id="email-preview-box"></div>
                                     </div>
                                     <div class="preview-group">
                                         <label>Text Template Preview</label>
@@ -558,15 +560,19 @@ Hello Jane, please send this to all Senior parents.</textarea
         const adminContactContainer = document.getElementById(
             "adminContactContainer",
         );
+        const campaignSelect = document.getElementById("campaign");
+        const emailTemplateSelect = document.getElementById("email-template");
+        const emailPreviewBox = document.getElementById("email-preview-box");
 
         let adminTimeout;
+        let emailTemplates = [];
 
         window.handleAdminInput = function handleAdminInput(value) {
             clearTimeout(adminTimeout);
             adminContactContainer.innerHTML = "Searching...";
             if (value.length < 3) {
                 adminContactContainer.innerHTML =
-                    'Please enter an email address. <span id="arw">➡️</span>';
+                    "Please enter an email address.";
                 return;
             }
             adminTimeout = setTimeout(async () => {
@@ -576,8 +582,7 @@ Hello Jane, please send this to all Senior parents.</textarea
                         contact.lastName
                     }`;
                 } else {
-                    adminContactContainer.innerHTML =
-                        'No contact found. <span id="arw">➡️</span>';
+                    adminContactContainer.innerHTML = "No contact found";
                 }
             }, 500);
         };
@@ -603,13 +608,6 @@ Hello Jane, please send this to all Senior parents.</textarea
                 const response = await fetch(url, options);
                 const data = await response.json();
                 console.log(data);
-                // response looks like this:
-                // {
-                //     "contacts": [],
-                //     "total": 0,
-                //     "traceId": "f86e5ce5-cc8b-4702-bb4d-e2ce8fb49d67"
-                // }
-                // return first contact
                 return data.contacts[0];
             } catch (error) {
                 console.error(error);
@@ -622,17 +620,214 @@ Hello Jane, please send this to all Senior parents.</textarea
                 .collection("campaigns_restructured")
                 .doc(locationID)
                 .collection("campaigns");
+
             const snapshot = await campaignsRef.get();
             snapshot.forEach((doc) => {
                 campaignList.push({
                     id: doc.id,
                     data: doc.data(),
                 });
-                // add it to the dropdown
-                returnVar += `<option value="${doc.id}">${doc.data().name} &nbsp; &nbsp; &nbsp;</option>`;
+                returnVar += `<option value="${doc.id}">${doc.data().name}</option>`;
             });
-            console.log(campaignList);
+            console.log("Campaign list loaded:", campaignList);
             return returnVar;
         }
+
+        /**
+         * Replaces custom field placeholders in an HTML string with data from a campaign object.
+         * @param {string} html - The HTML template content.
+         * @param {object} campaignData - The data object for the selected campaign.
+         * @returns {string} The HTML with placeholders filled in.
+         */
+        function mergeCustomFields(html, campaignData) {
+            if (!html || !campaignData) return html || "";
+            // Regex to find all placeholders like {{schoolName}} or {{ mascot }}
+            return html.replace(/{{(.*?)}}/g, (match, key) => {
+                const trimmedKey = key.trim();
+                // If the key exists in the campaign data, replace it. Otherwise, keep the original placeholder.
+                if (campaignData.hasOwnProperty(trimmedKey)) {
+                    return campaignData[trimmedKey];
+                }
+                return match;
+            });
+        }
+
+        /**
+         * Fetches template content, merges campaign data, and updates the preview iframe.
+         */
+        /**
+         * Fetches template content, merges campaign data, and updates the preview iframe.
+         */
+        /**
+         * Fetches template content, merges campaign data, and updates the preview iframe.
+         * This function is rewritten to:
+         * 1. Fetch the template HTML from the `previewUrl` provided in the template list API response.
+         * 2. Fetch location-wide custom values from the GHL API.
+         * 3. Merge both campaign-specific fields (from Firestore) and GHL custom values into the template.
+         */
+        /**
+         * Fetches template content, merges campaign data and GHL custom values,
+         * and updates the preview iframe.
+         */
+        async function updatePreview() {
+            const campaignId = campaignSelect.value;
+            const templateId = emailTemplateSelect.value;
+
+            // Initial state message
+            emailPreviewBox.innerHTML =
+                '<p style="text-align:center; color: var(--text-secondary); padding: 2rem;">Select a campaign and template to see a preview.</p>';
+
+            if (!campaignId || !templateId) {
+                return;
+            }
+
+            emailPreviewBox.innerHTML =
+                '<p style="text-align:center; color: var(--text-secondary); padding: 2rem;">Loading preview...</p>';
+
+            try {
+                // 1. Get campaign data from the pre-fetched list
+                const selectedCampaign = campaignList.find(
+                    (c) => c.id === campaignId,
+                );
+                if (!selectedCampaign) {
+                    throw new Error("Selected campaign data not found.");
+                }
+                const campaignData = selectedCampaign.data;
+
+                // 2. Find the selected template object to get its previewUrl
+                const selectedTemplate = emailTemplates.find(
+                    (t) => t.id === templateId,
+                );
+                if (!selectedTemplate || !selectedTemplate.previewUrl) {
+                    throw new Error(
+                        "Selected template's preview URL not found.",
+                    );
+                }
+
+                // 3. Fetch GHL Custom Values and the template HTML in parallel
+                const [ghlValuesResponse, templateHtmlResponse] =
+                    await Promise.all([
+                        fetch(
+                            `https://services.leadconnectorhq.com/locations/${locationID}/customValues`,
+                            {
+                                method: "GET",
+                                headers: {
+                                    Authorization:
+                                        "Bearer " + locationAccessKey,
+                                    Version: "2021-07-28",
+                                    Accept: "application/json",
+                                },
+                            },
+                        ),
+                        // Fetch the template content from its public preview URL
+                        fetch(selectedTemplate.previewUrl),
+                    ]);
+
+                if (!ghlValuesResponse.ok) {
+                    throw new Error(
+                        `Failed to fetch custom values: ${ghlValuesResponse.statusText}`,
+                    );
+                }
+                if (!templateHtmlResponse.ok) {
+                    throw new Error(
+                        `Failed to fetch template HTML: ${templateHtmlResponse.statusText}`,
+                    );
+                }
+
+                const ghlValuesData = await ghlValuesResponse.json();
+                const ghlCustomValues = ghlValuesData.customValues || [];
+                let templateHtml = await templateHtmlResponse.text();
+
+                if (typeof templateHtml !== "string") {
+                    throw new Error(
+                        "Template body could not be loaded as text.",
+                    );
+                }
+
+                // 4. Merge GHL custom values (e.g., {{ custom_values.some_key }})
+                ghlCustomValues.forEach((cv) => {
+                    // The fieldKey from the API is the full string, e.g., "{{ custom_values.custom_field }}"
+                    // We create a global RegExp from it to replace all occurrences.
+                    const keyRegex = new RegExp(
+                        cv.fieldKey.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
+                        "g",
+                    );
+                    templateHtml = templateHtml.replace(keyRegex, cv.value);
+                });
+
+                // 5. Merge campaign-specific custom fields (e.g., {{schoolName}})
+                const finalHtml = mergeCustomFields(templateHtml, campaignData);
+
+                // 6. Display in an iframe for style isolation
+                emailPreviewBox.innerHTML = ""; // Clear loading message
+                const iframe = document.createElement("iframe");
+                iframe.style.width = "100%";
+                iframe.style.height = "100%";
+                iframe.style.border = "none";
+                iframe.style.borderRadius = "var(--border-radius)";
+                emailPreviewBox.appendChild(iframe);
+                iframe.contentWindow.document.open();
+                iframe.contentWindow.document.write(finalHtml);
+                iframe.contentWindow.document.close();
+            } catch (error) {
+                console.error("Error updating preview:", error);
+                emailPreviewBox.innerHTML = `<p style="padding: 1rem; color: red;">Could not load preview. ${error.message}</p>`;
+            }
+        }
+        /**
+         * Fetches the list of email templates and populates the dropdown.
+         */
+        async function initializeEmailTemplates() {
+            try {
+                const url = `https://services.leadconnectorhq.com/emails/builder?locationId=${locationID}&limit=100`; // Fetch up to 100 templates
+                const options = {
+                    method: "GET",
+                    headers: {
+                        Authorization: "Bearer " + locationAccessKey,
+                        Version: "2021-07-28",
+                        Accept: "application/json",
+                    },
+                };
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    throw new Error(
+                        `API request failed: ${response.statusText}`,
+                    );
+                }
+                const data = await response.json();
+
+                // API might return an object with a key 'templates' or just an array
+                const templates = data.builders || data;
+                console.log(data);
+
+                if (!Array.isArray(templates)) {
+                    throw new Error(
+                        "Unexpected response format for email templates.",
+                    );
+                }
+                emailTemplates = templates; // Cache templates if needed
+
+                let optionsHtml = `<option value="" disabled selected>Select an email template</option>`;
+                templates.forEach((template) => {
+                    if (template.previewUrl) {
+                        optionsHtml += `<option value="${template.id}">${template.name}</option>`;
+                    }
+                });
+                emailTemplateSelect.innerHTML = optionsHtml;
+            } catch (error) {
+                console.error("Failed to fetch email templates:", error);
+                emailTemplateSelect.innerHTML = `<option value="" disabled selected>Error loading templates</option>`;
+            }
+        }
+
+        // Add event listeners for the dropdowns
+        campaignSelect.addEventListener("change", updatePreview);
+        emailTemplateSelect.addEventListener("change", updatePreview);
+
+        // Initial call to populate templates
+        initializeEmailTemplates();
+
+        // Set the initial state for the preview box
+        updatePreview();
     })();
 </script>
