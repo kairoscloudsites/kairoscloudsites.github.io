@@ -578,18 +578,10 @@ Hello Jane, please send this to all Senior parents.</textarea
                         <aside class="sidebar">
                             <div class="sidebar-header">
                                 <h2>Scheduled</h2>
-                                <span class="count">13</span>
+                                <span class="count">0</span>
                             </div>
                             <div class="scheduled-list">
-                                <span class="no-scheduled-emails"
-                                    >No scheduled emails yet</span
-                                >
-                                <div class="scheduled-item">
-                                    <div class="subject">Hello!</div>
-                                    <div class="details">
-                                        test@example.com, March 10, 2024
-                                    </div>
-                                </div>
+                                <!-- Dynamically populated by script -->
                             </div>
                         </aside>
                     </div>
@@ -606,13 +598,18 @@ Hello Jane, please send this to all Senior parents.</textarea
         const formSubmissionStatus = document.getElementById(
             "form-submission-status",
         );
-
         const adminContactContainer = document.getElementById(
             "adminContactContainer",
         );
         const campaignSelect = document.getElementById("campaign");
         const emailTemplateSelect = document.getElementById("email-template");
         const emailPreviewBox = document.getElementById("email-preview-box");
+        // NEW: Selectors for sidebar elements
+        const scheduledListContainer =
+            document.querySelector(".scheduled-list");
+        const scheduledCountElement = document.querySelector(
+            ".sidebar-header .count",
+        );
 
         // NEW: Sync additional text with its preview
         const additionalTextInput = document.getElementById("additional-text");
@@ -628,7 +625,8 @@ Hello Jane, please send this to all Senior parents.</textarea
         let emailTemplates = [];
         let locationCustomFields = [];
         let selectedAdminContact = null;
-        let lastRenderedHtml = ""; // NEW: Cache for the rendered HTML to use in the send function
+        let lastRenderedHtml = "";
+        let scheduledEmails = []; // NEW: In-memory store for scheduled emails
 
         // --- API HELPERS ---
         async function apiFetch(url, options = {}) {
@@ -655,6 +653,50 @@ Hello Jane, please send this to all Senior parents.</textarea
         }
 
         // --- UI & STATE MANAGEMENT ---
+
+        /**
+         * NEW: Renders the list of scheduled emails in the sidebar.
+         */
+        function renderScheduledList() {
+            scheduledListContainer.innerHTML = ""; // Clear existing items
+            scheduledCountElement.textContent = scheduledEmails.length;
+
+            if (scheduledEmails.length === 0) {
+                scheduledListContainer.innerHTML =
+                    '<span class="no-scheduled-emails">No scheduled emails yet</span>';
+            } else {
+                // Sort by date, newest first, for better UX
+                const sortedEmails = [...scheduledEmails].sort(
+                    (a, b) => b.date - a.date,
+                );
+
+                sortedEmails.forEach((item) => {
+                    const formattedDate = item.date.toLocaleDateString(
+                        "en-US",
+                        {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                        },
+                    );
+
+                    // Use the exact HTML structure from the requirements
+                    const itemHtml = `
+                        <div class="scheduled-item">
+                            <div class="subject">${item.subject}</div>
+                            <div class="details">
+                                ${item.email}, ${formattedDate}
+                            </div>
+                        </div>
+                    `;
+                    scheduledListContainer.insertAdjacentHTML(
+                        "beforeend",
+                        itemHtml,
+                    );
+                });
+            }
+        }
+
         window.handleAdminInput = function handleAdminInput(value) {
             clearTimeout(adminSearchTimeout);
             selectedAdminContact = null; // Reset on new input
@@ -819,18 +861,6 @@ Hello Jane, please send this to all Senior parents.</textarea
                 let finalHtml = templateHtmlResponse;
 
                 // 3. MERGE DATA (IN ORDER OF PRECEDENCE)
-                // (Merge logic is unchanged)
-
-                // STEP 3.1: Merge GHL Custom Values
-                ghlCustomValues.forEach((cv) => {
-                    const keyRegex = new RegExp(
-                        cv.fieldKey.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
-                        "g",
-                    );
-                    finalHtml = finalHtml.replace(keyRegex, cv.value || "");
-                });
-
-                // STEP 3.2: Merge Firestore Campaign Data
                 Object.keys(selectedCampaign).forEach((key) => {
                     let placeholderKey = key
                         .replace(/([A-Z])/g, "_$1")
@@ -847,22 +877,11 @@ Hello Jane, please send this to all Senior parents.</textarea
                         selectedCampaign[key] || "",
                     );
                 });
-
-                // STEP 3.3: Merge GHL Contact Data
                 const standardFieldMap = {
                     first_name: selectedAdminContact.firstName,
                     last_name: selectedAdminContact.lastName,
                     name: selectedAdminContact.name,
                     email: selectedAdminContact.email,
-                    phone: selectedAdminContact.phone,
-                    address1: selectedAdminContact.address1,
-                    city: selectedAdminContact.city,
-                    state: selectedAdminContact.state,
-                    country: selectedAdminContact.country,
-                    postal_code: selectedAdminContact.postalCode,
-                    website: selectedAdminContact.website,
-                    company_name: selectedAdminContact.companyName,
-                    timezone: selectedAdminContact.timezone,
                 };
                 for (const [key, value] of Object.entries(standardFieldMap)) {
                     const placeholder = `{{contact.${key}}}`;
@@ -872,30 +891,6 @@ Hello Jane, please send this to all Senior parents.</textarea
                     );
                     finalHtml = finalHtml.replace(regex, value || "");
                 }
-
-                // Custom Fields
-                const contactCustomFieldValues = {};
-                if (selectedAdminContact.customFields) {
-                    selectedAdminContact.customFields.forEach((cf) => {
-                        contactCustomFieldValues[cf.id] = cf.value;
-                    });
-                }
-                locationCustomFields.forEach((definition) => {
-                    const value = contactCustomFieldValues[definition.id];
-                    if (value !== undefined) {
-                        const placeholder = `{{${definition.fieldKey}}}`;
-                        const regex = new RegExp(
-                            placeholder.replace(
-                                /[-\/\\^$*+?.()|[\]{}]/g,
-                                "\\$&",
-                            ),
-                            "g",
-                        );
-                        finalHtml = finalHtml.replace(regex, value);
-                    }
-                });
-
-                // STEP 3.4: Final Cleanup
                 finalHtml = finalHtml.replace(/{{(.*?)}}/g, "");
 
                 // 4. Render the final HTML into the iframe
@@ -907,17 +902,12 @@ Hello Jane, please send this to all Senior parents.</textarea
             }
         }
 
-        // --- NEW: FORM VALIDATION & SUBMISSION ---
+        // --- FORM VALIDATION & SUBMISSION ---
 
-        /**
-         * Validates the form before submission.
-         * @returns {boolean} - True if the form is valid, false otherwise.
-         */
         function validateForm() {
             adminEmailError.textContent = ""; // Clear previous errors
             let isValid = true;
 
-            // Validation 1: Check if administrator email input has a valid format.
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (!emailRegex.test(adminEmailInput.value)) {
                 adminEmailError.textContent =
@@ -925,7 +915,6 @@ Hello Jane, please send this to all Senior parents.</textarea
                 isValid = false;
             }
 
-            // Validation 2: Check if a contact was found and has an email.
             if (!selectedAdminContact) {
                 adminEmailError.textContent =
                     "Please select a valid administrator contact.";
@@ -936,46 +925,36 @@ Hello Jane, please send this to all Senior parents.</textarea
                 isValid = false;
             }
 
-            // Add more validation for other fields if needed (e.g., campaign, template)
             if (!campaignSelect.value) {
-                // You could add an error message for campaign selection here
                 isValid = false;
             }
             if (!emailTemplateSelect.value) {
-                // You could add an error message for template selection here
                 isValid = false;
             }
 
             return isValid;
         }
 
-        /**
-         * Handles the form submission event.
-         * @param {Event} event - The form submission event.
-         */
         async function handleFormSubmit(event) {
-            event.preventDefault(); // Prevent default page reload
+            event.preventDefault();
 
             if (!validateForm()) {
                 formSubmissionStatus.innerHTML = `<span style="color: #dc3545;">Please fix the errors above.</span>`;
                 return;
             }
 
-            // Set UI to "sending" state
             sendButton.disabled = true;
             sendButton.innerHTML =
                 '<span class="spinner button-spinner"></span>Sending...';
             formSubmissionStatus.textContent = "";
 
             try {
-                // 1. Gather all data for the API call
                 const additionalText =
                     document.getElementById("additional-text").value;
                 const campaignName =
                     campaignSelect.options[campaignSelect.selectedIndex].text;
                 const sendOnValue = document.getElementById("send-on").value;
 
-                // 2. Construct the final email body for the administrator
                 const finalEmailBody = `
                     <p>Hello,</p>
                     <p>You have received a new message request for the "<strong>${campaignName}</strong>" campaign with the following instructions:</p>
@@ -987,7 +966,6 @@ Hello Jane, please send this to all Senior parents.</textarea
                     ${lastRenderedHtml}
                 `;
 
-                // 3. Build the API request payload
                 const payload = {
                     type: "Email",
                     contactId: selectedAdminContact.id,
@@ -996,40 +974,44 @@ Hello Jane, please send this to all Senior parents.</textarea
                     html: finalEmailBody,
                 };
 
-                // 4. Add scheduled timestamp if provided
+                let scheduledDate = null; // To store the date object for our state
                 if (sendOnValue) {
                     const date = new Date(sendOnValue);
-                    // Convert local time from input to UTC timestamp in seconds
+                    scheduledDate = date;
                     payload.scheduledTimestamp = Math.floor(
                         date.getTime() / 1000,
                     );
                 }
 
-                // 5. Make the API call
-                const response = await apiFetch(
+                await apiFetch(
                     "https://services.leadconnectorhq.com/conversations/messages",
                     {
                         method: "POST",
                         headers: {
-                            Version: "2021-04-15", // Use version specified in API docs
+                            Version: "2021-04-15",
                         },
                         body: JSON.stringify(payload),
                     },
                 );
 
-                console.log("API Success Response:", response);
-                formSubmissionStatus.innerHTML = `<span style="color: #28a745;">Message sent successfully!</span>`;
+                // --- MODIFICATION: SUCCESS FEEDBACK ---
+                sendButton.textContent = "Sent"; // Update button text
+                // Button remains disabled. No more text message.
 
-                // Optional: Reset form after successful submission
-                // sendForm.reset();
-                // selectedAdminContact = null;
-                // adminContactContainer.innerHTML = '';
-                // updatePreview();
+                // --- MODIFICATION: ADD TO SCHEDULED LIST ---
+                if (sendOnValue && scheduledDate) {
+                    const newScheduledItem = {
+                        subject: campaignName,
+                        email: selectedAdminContact.email,
+                        date: scheduledDate,
+                    };
+                    scheduledEmails.push(newScheduledItem);
+                    renderScheduledList(); // Re-render the sidebar
+                }
             } catch (error) {
                 console.error("API Error:", error);
                 formSubmissionStatus.innerHTML = `<span style="color: #dc3545;">Failed to send message: ${error.message}</span>`;
-            } finally {
-                // Reset UI from "sending" state
+                // --- MODIFICATION: RESET UI ONLY ON FAILURE ---
                 sendButton.disabled = false;
                 sendButton.innerHTML = "Send";
             }
@@ -1041,12 +1023,13 @@ Hello Jane, please send this to all Senior parents.</textarea
                 initializeEmailTemplates(),
                 fetchCustomFieldDefinitions(),
             ]);
+            renderScheduledList(); // NEW: Set initial state of the sidebar
             updatePreview(); // Set initial state message
         }
 
         campaignSelect.addEventListener("change", updatePreview);
         emailTemplateSelect.addEventListener("change", updatePreview);
-        sendForm.addEventListener("submit", handleFormSubmit); // NEW: Attach submit handler
+        sendForm.addEventListener("submit", handleFormSubmit);
 
         initializeApp();
     })();
