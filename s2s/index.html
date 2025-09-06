@@ -187,6 +187,16 @@ box in the adjacent column.
                             font-size: 1rem;
                             cursor: pointer;
                             margin-left: auto;
+                            display: flex; /* NEW: For aligning spinner */
+                            align-items: center; /* NEW: For aligning spinner */
+                            justify-content: center; /* NEW: For aligning spinner */
+                            gap: 0.5rem; /* NEW: For spacing spinner */
+                        }
+
+                        /* NEW: Added disabled state for send button */
+                        .send-button:disabled {
+                            background-color: #a0b8da;
+                            cursor: not-allowed;
                         }
 
                         /* --- Preview Panes --- */
@@ -216,6 +226,14 @@ box in the adjacent column.
                             overflow-y: auto;
                             padding: 1rem;
                             box-sizing: border-box;
+                        }
+
+                        /* NEW: Styling for the preview iframe */
+                        #email-preview-iframe {
+                            width: 100%;
+                            height: 100%;
+                            border: none;
+                            background-color: #ffffff;
                         }
 
                         .text-preview-box {
@@ -366,6 +384,21 @@ The following rules adjust the layout for tablet and mobile screen sizes.
                             align-items: center;
                         }
 
+                        .no-scheduled-emails {
+                            color: #6c757d;
+                            font-size: 0.875rem;
+                            margin-top: -1.25rem;
+                            margin-bottom: 1.5rem;
+                        }
+
+                        /* NEW: Style for validation error messages */
+                        .validation-error {
+                            color: #dc3545; /* Bootstrap's danger red */
+                            font-size: 0.875rem;
+                            margin-top: -1.25rem;
+                            margin-bottom: 1.5rem;
+                        }
+
                         #arw {
                             margin-right: 6px;
                         }
@@ -380,6 +413,13 @@ The following rules adjust the layout for tablet and mobile screen sizes.
                             display: inline-block;
                             margin-right: 8px;
                         }
+
+                        /* NEW: Spinner used on send button */
+                        .button-spinner {
+                            border-top-color: var(--button-text);
+                            margin-right: 0;
+                        }
+
                         @keyframes spin {
                             0% {
                                 transform: rotate(0deg);
@@ -423,6 +463,10 @@ The following rules adjust the layout for tablet and mobile screen sizes.
                                         />
                                     </div>
                                     <div id="adminContactContainer"></div>
+                                    <div
+                                        id="admin-email-error"
+                                        class="validation-error"
+                                    ></div>
 
                                     <div class="form-group">
                                         <label for="campaign"
@@ -499,24 +543,32 @@ Hello Jane, please send this to all Senior parents.</textarea
                                         <button
                                             type="submit"
                                             class="send-button"
+                                            id="send-button"
                                         >
                                             Send
                                         </button>
                                     </div>
+                                    <div
+                                        id="form-submission-status"
+                                        style="text-align: right; margin-top: 0.5rem;"
+                                    ></div>
                                 </form>
 
                                 <div class="previews">
                                     <div class="preview-group">
                                         <label>Email Template Preview</label>
-                                        <div id="email-preview-box"></div>
+                                        <div id="email-preview-box">
+                                            <!-- Iframe will be injected here -->
+                                        </div>
                                     </div>
                                     <div class="preview-group">
                                         <label>Text Template Preview</label>
                                         <textarea
-                                            id="additional-text"
-                                            name="additional_text"
+                                            id="additional-text-preview"
+                                            name="additional_text_preview"
                                             class="form-textarea"
                                             style="height: 117px"
+                                            readonly
                                         ></textarea>
                                     </div>
                                 </div>
@@ -529,54 +581,9 @@ Hello Jane, please send this to all Senior parents.</textarea
                                 <span class="count">13</span>
                             </div>
                             <div class="scheduled-list">
-                                <div class="scheduled-item">
-                                    <div class="subject">Hello!</div>
-                                    <div class="details">
-                                        test@example.com, March 10, 2024
-                                    </div>
-                                </div>
-                                <div class="scheduled-item">
-                                    <div class="subject">Hello2!</div>
-                                    <div class="details">
-                                        help@website.site, May 29, 2024
-                                    </div>
-                                </div>
-                                <div class="scheduled-item">
-                                    <div class="subject">Email subject</div>
-                                    <div class="details">
-                                        address@site.com, October 9, 2024
-                                    </div>
-                                </div>
-                                <div class="scheduled-item">
-                                    <div class="subject">Hello!</div>
-                                    <div class="details">
-                                        test@example.com, March 10, 2024
-                                    </div>
-                                </div>
-                                <div class="scheduled-item">
-                                    <div class="subject">Hello2!</div>
-                                    <div class="details">
-                                        help@website.site, May 29, 2024
-                                    </div>
-                                </div>
-                                <div class="scheduled-item">
-                                    <div class="subject">Email subject</div>
-                                    <div class="details">
-                                        address@site.com, October 9, 2024
-                                    </div>
-                                </div>
-                                <div class="scheduled-item">
-                                    <div class="subject">Hello!</div>
-                                    <div class="details">
-                                        test@example.com, March 10, 2024
-                                    </div>
-                                </div>
-                                <div class="scheduled-item">
-                                    <div class="subject">Hello!</div>
-                                    <div class="details">
-                                        test@example.com, March 10, 2024
-                                    </div>
-                                </div>
+                                <span class="no-scheduled-emails"
+                                    >No scheduled emails yet</span
+                                >
                                 <div class="scheduled-item">
                                     <div class="subject">Hello!</div>
                                     <div class="details">
@@ -592,6 +599,14 @@ Hello Jane, please send this to all Senior parents.</textarea
         document.write(app);
 
         // --- GLOBAL STATE & CACHE ---
+        const sendForm = document.querySelector(".send-form");
+        const sendButton = document.getElementById("send-button");
+        const adminEmailInput = document.getElementById("admin-email");
+        const adminEmailError = document.getElementById("admin-email-error");
+        const formSubmissionStatus = document.getElementById(
+            "form-submission-status",
+        );
+
         const adminContactContainer = document.getElementById(
             "adminContactContainer",
         );
@@ -599,10 +614,21 @@ Hello Jane, please send this to all Senior parents.</textarea
         const emailTemplateSelect = document.getElementById("email-template");
         const emailPreviewBox = document.getElementById("email-preview-box");
 
+        // NEW: Sync additional text with its preview
+        const additionalTextInput = document.getElementById("additional-text");
+        const additionalTextPreview = document.getElementById(
+            "additional-text-preview",
+        );
+        additionalTextInput.addEventListener("input", () => {
+            additionalTextPreview.value = additionalTextInput.value;
+        });
+        additionalTextPreview.value = additionalTextInput.value; // Initial sync
+
         let adminSearchTimeout;
         let emailTemplates = [];
         let locationCustomFields = [];
         let selectedAdminContact = null;
+        let lastRenderedHtml = ""; // NEW: Cache for the rendered HTML to use in the send function
 
         // --- API HELPERS ---
         async function apiFetch(url, options = {}) {
@@ -632,6 +658,8 @@ Hello Jane, please send this to all Senior parents.</textarea
         window.handleAdminInput = function handleAdminInput(value) {
             clearTimeout(adminSearchTimeout);
             selectedAdminContact = null; // Reset on new input
+            adminEmailError.textContent = ""; // Clear previous errors
+
             if (value.length < 3) {
                 adminContactContainer.innerHTML =
                     "Please enter an email address.";
@@ -740,20 +768,33 @@ Hello Jane, please send this to all Senior parents.</textarea
             }
         }
 
-        // --- CORE PREVIEW LOGIC ---
+        // --- CORE PREVIEW LOGIC (NOW WITH IFRAME) ---
         async function updatePreview() {
             const campaignId = campaignSelect.value;
             const templateId = emailTemplateSelect.value;
 
+            // NEW: Render placeholder content into the iframe
+            const renderInIframe = (content) => {
+                emailPreviewBox.innerHTML = ""; // Clear previous content
+                const iframe = document.createElement("iframe");
+                iframe.id = "email-preview-iframe";
+                iframe.setAttribute("sandbox", "allow-same-origin"); // For security
+                emailPreviewBox.appendChild(iframe);
+                iframe.srcdoc = content;
+                lastRenderedHtml = content; // Cache the content
+            };
+
             // 1. Check if all conditions are met
             if (!selectedAdminContact || !campaignId || !templateId) {
-                emailPreviewBox.innerHTML =
-                    '<p style="text-align:center; color: var(--text-secondary);">Please select an administrator, campaign, and template to see a preview.</p>';
+                const placeholder =
+                    '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select an administrator, campaign, and template to see a preview.</p></body>';
+                renderInIframe(placeholder);
                 return;
             }
 
-            emailPreviewBox.innerHTML =
-                '<p style="text-align:center; color: var(--text-secondary);">Loading preview...</p>';
+            renderInIframe(
+                '<p style="padding: 1rem; text-align:center; color: var(--text-secondary);">Loading preview...</p>',
+            );
 
             try {
                 // 2. Gather all required data
@@ -778,8 +819,9 @@ Hello Jane, please send this to all Senior parents.</textarea
                 let finalHtml = templateHtmlResponse;
 
                 // 3. MERGE DATA (IN ORDER OF PRECEDENCE)
+                // (Merge logic is unchanged)
 
-                // STEP 3.1: Merge GHL Custom Values (e.g., {{custom_values.some_key}})
+                // STEP 3.1: Merge GHL Custom Values
                 ghlCustomValues.forEach((cv) => {
                     const keyRegex = new RegExp(
                         cv.fieldKey.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
@@ -788,14 +830,13 @@ Hello Jane, please send this to all Senior parents.</textarea
                     finalHtml = finalHtml.replace(keyRegex, cv.value || "");
                 });
 
-                // STEP 3.2: Merge Firestore Campaign Data (e.g., {{contact.school_name}})
+                // STEP 3.2: Merge Firestore Campaign Data
                 Object.keys(selectedCampaign).forEach((key) => {
                     let placeholderKey = key
                         .replace(/([A-Z])/g, "_$1")
-                        .toLowerCase(); // camelCase to snake_case
-                    if (key === "name") placeholderKey = "campaign_name"; // Exception
-                    if (key === "mascot") placeholderKey = "school_mascot"; // Exception
-
+                        .toLowerCase();
+                    if (key === "name") placeholderKey = "campaign_name";
+                    if (key === "mascot") placeholderKey = "school_mascot";
                     const placeholder = `{{contact.${placeholderKey}}}`;
                     const regex = new RegExp(
                         placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
@@ -808,7 +849,6 @@ Hello Jane, please send this to all Senior parents.</textarea
                 });
 
                 // STEP 3.3: Merge GHL Contact Data
-                // Standard Fields
                 const standardFieldMap = {
                     first_name: selectedAdminContact.firstName,
                     last_name: selectedAdminContact.lastName,
@@ -824,7 +864,6 @@ Hello Jane, please send this to all Senior parents.</textarea
                     company_name: selectedAdminContact.companyName,
                     timezone: selectedAdminContact.timezone,
                 };
-
                 for (const [key, value] of Object.entries(standardFieldMap)) {
                     const placeholder = `{{contact.${key}}}`;
                     const regex = new RegExp(
@@ -856,14 +895,143 @@ Hello Jane, please send this to all Senior parents.</textarea
                     }
                 });
 
-                // STEP 3.4: Final Cleanup - Remove any unfilled placeholders
+                // STEP 3.4: Final Cleanup
                 finalHtml = finalHtml.replace(/{{(.*?)}}/g, "");
 
-                // 4. Render the final HTML directly into the preview box
-                emailPreviewBox.innerHTML = finalHtml;
+                // 4. Render the final HTML into the iframe
+                renderInIframe(finalHtml);
             } catch (error) {
                 console.error("Error updating preview:", error);
-                emailPreviewBox.innerHTML = `<p style="padding: 1rem; color: red;">Could not load preview. ${error.message}</p>`;
+                const errorHtml = `<p style="padding: 1rem; color: red;">Could not load preview. ${error.message}</p>`;
+                renderInIframe(errorHtml);
+            }
+        }
+
+        // --- NEW: FORM VALIDATION & SUBMISSION ---
+
+        /**
+         * Validates the form before submission.
+         * @returns {boolean} - True if the form is valid, false otherwise.
+         */
+        function validateForm() {
+            adminEmailError.textContent = ""; // Clear previous errors
+            let isValid = true;
+
+            // Validation 1: Check if administrator email input has a valid format.
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(adminEmailInput.value)) {
+                adminEmailError.textContent =
+                    "Please enter a valid email address format (e.g., user@domain.com).";
+                isValid = false;
+            }
+
+            // Validation 2: Check if a contact was found and has an email.
+            if (!selectedAdminContact) {
+                adminEmailError.textContent =
+                    "Please select a valid administrator contact.";
+                isValid = false;
+            } else if (!selectedAdminContact.email) {
+                adminEmailError.textContent =
+                    "The selected administrator contact does not have an email address.";
+                isValid = false;
+            }
+
+            // Add more validation for other fields if needed (e.g., campaign, template)
+            if (!campaignSelect.value) {
+                // You could add an error message for campaign selection here
+                isValid = false;
+            }
+            if (!emailTemplateSelect.value) {
+                // You could add an error message for template selection here
+                isValid = false;
+            }
+
+            return isValid;
+        }
+
+        /**
+         * Handles the form submission event.
+         * @param {Event} event - The form submission event.
+         */
+        async function handleFormSubmit(event) {
+            event.preventDefault(); // Prevent default page reload
+
+            if (!validateForm()) {
+                formSubmissionStatus.innerHTML = `<span style="color: #dc3545;">Please fix the errors above.</span>`;
+                return;
+            }
+
+            // Set UI to "sending" state
+            sendButton.disabled = true;
+            sendButton.innerHTML =
+                '<span class="spinner button-spinner"></span>Sending...';
+            formSubmissionStatus.textContent = "";
+
+            try {
+                // 1. Gather all data for the API call
+                const additionalText =
+                    document.getElementById("additional-text").value;
+                const campaignName =
+                    campaignSelect.options[campaignSelect.selectedIndex].text;
+                const sendOnValue = document.getElementById("send-on").value;
+
+                // 2. Construct the final email body for the administrator
+                const finalEmailBody = `
+                    <p>Hello,</p>
+                    <p>You have received a new message request for the "<strong>${campaignName}</strong>" campaign with the following instructions:</p>
+                    <blockquote style="border-left: 4px solid #ccc; padding-left: 1rem; margin-left: 0;">
+                        <p>${additionalText.replace(/\n/g, "<br>")}</p>
+                    </blockquote>
+                    <hr style="margin: 2rem 0;">
+                    <h3>Email Preview:</h3>
+                    ${lastRenderedHtml}
+                `;
+
+                // 3. Build the API request payload
+                const payload = {
+                    type: "Email",
+                    contactId: selectedAdminContact.id,
+                    emailTo: selectedAdminContact.email,
+                    subject: `Message Request for Campaign: ${campaignName}`,
+                    html: finalEmailBody,
+                };
+
+                // 4. Add scheduled timestamp if provided
+                if (sendOnValue) {
+                    const date = new Date(sendOnValue);
+                    // Convert local time from input to UTC timestamp in seconds
+                    payload.scheduledTimestamp = Math.floor(
+                        date.getTime() / 1000,
+                    );
+                }
+
+                // 5. Make the API call
+                const response = await apiFetch(
+                    "https://services.leadconnectorhq.com/conversations/messages",
+                    {
+                        method: "POST",
+                        headers: {
+                            Version: "2021-04-15", // Use version specified in API docs
+                        },
+                        body: JSON.stringify(payload),
+                    },
+                );
+
+                console.log("API Success Response:", response);
+                formSubmissionStatus.innerHTML = `<span style="color: #28a745;">Message sent successfully!</span>`;
+
+                // Optional: Reset form after successful submission
+                // sendForm.reset();
+                // selectedAdminContact = null;
+                // adminContactContainer.innerHTML = '';
+                // updatePreview();
+            } catch (error) {
+                console.error("API Error:", error);
+                formSubmissionStatus.innerHTML = `<span style="color: #dc3545;">Failed to send message: ${error.message}</span>`;
+            } finally {
+                // Reset UI from "sending" state
+                sendButton.disabled = false;
+                sendButton.innerHTML = "Send";
             }
         }
 
@@ -878,6 +1046,7 @@ Hello Jane, please send this to all Senior parents.</textarea
 
         campaignSelect.addEventListener("change", updatePreview);
         emailTemplateSelect.addEventListener("change", updatePreview);
+        sendForm.addEventListener("submit", handleFormSubmit); // NEW: Attach submit handler
 
         initializeApp();
     })();
