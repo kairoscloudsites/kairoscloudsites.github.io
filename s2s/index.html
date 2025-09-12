@@ -1,687 +1,765 @@
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<!doctype html>
+<html lang="en">
+    <!-- START OF FILE index.html -->
 
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
 
-<script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+    <script>
+        (async () => {
+            let locationID;
+            let locationAccessKey;
 
-<script>
-    (async () => {
-        let locationID;
-        let locationAccessKey;
-
-        while (!window.GlobalLocationAccessKey) {
-            // console.log("waiting for firebase");
-            await new Promise((resolve) => setTimeout(resolve, 100));
-            locationID = window.GlobalLocationID; // set by globalFirebase
-            locationAccessKey = window.GlobalLocationAccessKey; // set by globalFirebase
-        }
-        let campaignList = [];
-        const html = (strings, ...values) =>
-            strings.reduce((acc, str, i) => acc + str + (values[i] ?? ""), "");
-        let app = html`<!doctype html>
-            <html lang="en">
-                <head>
-                    <meta charset="UTF-8" />
-                    <meta
-                        name="viewport"
-                        content="width=device-width, initial-scale=1.0"
-                    />
-                    <title>Send to School (Mockup)</title>
-                    <link
-                        rel="icon"
-                        href="https://kairoscloud.github.io/main/Assets/favicon.png"
-                        type="image/x-icon"
-                    />
-                    <style>
-                        :root {
-                            --font-family:
-                                -apple-system, BlinkMacSystemFont, "Segoe UI",
-                                Roboto, Helvetica, Arial, sans-serif;
-                            --background-color: #ffffff;
-                            --text-primary: #1c1c1e;
-                            --text-secondary: #6c757d;
-                            --border-color: #ced4da;
-                            --input-bg: #f0f2f5;
-                            --button-bg: #4479ce;
-                            --button-text: #ffffff;
-                            --border-radius: 12px;
-                        }
-
-                        body {
-                            font-family: var(--font-family);
-                            background-color: var(--background-color);
-                            color: var(--text-primary);
-                            margin: 0;
-                            /* CHANGE: Removed horizontal padding to make layout full-width. */
-                            padding: 2rem 0;
-                            display: flex;
-                            justify-content: center;
-                            box-sizing: border-box;
-                        }
-
-                        .container {
-                            display: flex;
-                            gap: 2rem;
-                            width: 100%;
-                            /* CHANGE: Removed max-width to let the container hug the screen edges. */
-                        }
-
-                        /* --- Main Content (Left Column) --- */
-                        .main-content {
-                            flex: 2 1 65%;
-                            display: flex;
-                            flex-direction: column;
-                            min-width: 0;
-                            /* CHANGE: Added padding here to keep content off the screen edge. */
-                            padding-left: 2rem;
-                        }
-
-                        .main-content h1 {
-                            font-size: 2rem;
-                            font-weight: 700;
-                            margin-top: 0;
-                            margin-bottom: 2rem;
-                        }
-
-                        .form-and-previews {
-                            display: flex;
-                            gap: 2rem;
-                            /* Ensures both columns stretch to the same height for alignment. */
-                            align-items: stretch;
-                        }
-
-                        .send-form {
-                            flex: 1 1 55%;
-                            display: flex;
-                            flex-direction: column;
-                            gap: 1.5rem;
-                            min-width: 0;
-                        }
-
-                        /*
-REASON: This is the key change for the vertical alignment request.
-It selects the form group before "Additional Text" and applies a margin.
-'margin-bottom: auto' pushes all subsequent items to the bottom of the
-flex container, aligning the "Additional Text" box with the "Text Preview"
-box in the adjacent column.
-*/
-                        .send-form .form-group:nth-of-type(5) {
-                            margin-bottom: auto;
-                        }
-
-                        .form-group {
-                            display: flex;
-                            flex-direction: column;
-                            gap: 0.5rem;
-                        }
-
-                        .form-group label {
-                            font-weight: 600;
-                            font-size: 0.9rem;
-                        }
-
-                        .form-input,
-                        .form-textarea {
-                            width: 100%;
-                            padding: 0.8rem 1rem;
-                            border: 1px solid var(--border-color);
-                            border-radius: var(--border-radius);
-                            font-size: 1rem;
-                            font-family: var(--font-family);
-                            box-sizing: border-box;
-                        }
-
-                        .form-input::placeholder,
-                        .form-textarea::placeholder {
-                            color: var(--text-secondary);
-                        }
-
-                        .select-wrapper {
-                            position: relative;
-                        }
-
-                        .form-select {
-                            appearance: none;
-                            -webkit-appearance: none;
-                            -moz-appearance: none;
-                            width: 100%;
-                            padding: 0.8rem 1rem;
-                            border: 1px solid var(--input-bg);
-                            background-color: var(--input-bg);
-                            border-radius: var(--border-radius);
-                            font-size: 1rem;
-                            color: var(--text-secondary);
-                            font-family: var(--font-family);
-                            cursor: pointer;
-                        }
-
-                        .select-wrapper::after {
-                            content: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
-                            position: absolute;
-                            right: 1rem;
-                            top: 50%;
-                            transform: translateY(-50%);
-                            pointer-events: none;
-                        }
-
-                        .form-textarea {
-                            height: 120px;
-                            resize: vertical;
-                            resize: none;
-                        }
-
-                        .form-actions {
-                            display: flex;
-                            gap: 1rem;
-                            align-items: flex-end;
-                            padding-top: 1rem;
-                        }
-
-                        .send-button {
-                            background-color: var(--button-bg);
-                            color: var(--button-text);
-                            font-weight: 600;
-                            border: none;
-                            padding: 0.8rem 2.5rem;
-                            border-radius: var(--border-radius);
-                            font-size: 1rem;
-                            cursor: pointer;
-                            margin-left: auto;
-                            display: flex; /* NEW: For aligning spinner */
-                            align-items: center; /* NEW: For aligning spinner */
-                            justify-content: center; /* NEW: For aligning spinner */
-                            gap: 0.5rem; /* NEW: For spacing spinner */
-                        }
-
-                        /* NEW: Added disabled state for send button */
-                        .send-button:disabled {
-                            background-color: #a0b8da;
-                            cursor: not-allowed;
-                        }
-
-                        /* --- Preview Panes --- */
-                        .previews {
-                            flex: 1 1 45%;
-                            display: flex;
-                            flex-direction: column;
-                            gap: 1.5rem;
-                            min-width: 0;
-                        }
-
-                        .preview-group {
-                            display: flex;
-                            flex-direction: column;
-                            gap: 0.5rem;
-                        }
-
-                        .preview-group label {
-                            font-weight: 600;
-                            font-size: 0.9rem;
-                        }
-
-                        #email-preview-box {
-                            background-color: var(--input-bg);
-                            border-radius: var(--border-radius);
-                            height: 316px;
-                            overflow-y: auto;
-                            padding: 1rem;
-                            box-sizing: border-box;
-                        }
-
-                        /* NEW: Styling for the preview iframe */
-                        #email-preview-iframe {
-                            width: 100%;
-                            height: 100%;
-                            border: none;
-                            background-color: #ffffff;
-                        }
-
-                        .text-preview-box {
-                            background-color: var(--background-color);
-                            border: 1px solid var(--border-color);
-                            border-radius: var(--border-radius);
-                            height: 116px;
-                        }
-
-                        /* --- Sidebar (Right Column) --- */
-                        .sidebar {
-                            flex: 1 1 35%;
-                            min-width: 280px;
-                            padding-left: 2rem;
-                            border-left: 1px solid #e5e5e5;
-                            max-height: 95vh;
-                            overflow-y: auto;
-                            /* CHANGE: Added padding here to keep content off the screen edge. */
-                            padding-right: 2rem;
-                        }
-
-                        .sidebar-header {
-                            display: flex;
-                            justify-content: space-between;
-                            align-items: center;
-                            margin-bottom: 2rem;
-                        }
-
-                        .sidebar-header h2 {
-                            font-size: 2rem;
-                            font-weight: 700;
-                            margin: 0;
-                            display: inline-block;
-                        }
-
-                        .sidebar-header .count {
-                            font-size: 2rem;
-                            font-weight: 400;
-                            color: var(--text-secondary);
-                            margin-left: 0.75rem;
-                        }
-
-                        .scheduled-list {
-                            display: flex;
-                            flex-direction: column;
-                            gap: 1rem;
-                        }
-
-                        .scheduled-item {
-                            background-color: var(--background-color);
-                            border: 1px solid var(--border-color);
-                            border-radius: var(--border-radius);
-                            padding: 1rem;
-                        }
-
-                        .scheduled-item .subject {
-                            font-weight: 600;
-                            margin-bottom: 0.25rem;
-                        }
-
-                        .scheduled-item .details {
-                            font-size: 0.9rem;
-                            color: var(--text-secondary);
-                        }
-
-                        /*
---- MEDIA QUERIES FOR RESPONSIVE DESIGN ---
-The following rules adjust the layout for tablet and mobile screen sizes.
-*/
-
-                        /* Breakpoint 1: Tablets and smaller desktops (<= 1024px) */
-                        @media (max-width: 1024px) {
-                            .container {
-                                flex-direction: column;
-                                gap: 3rem;
+            while (!window.GlobalLocationAccessKey) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                locationID = window.GlobalLocationID; // set by globalFirebase
+                locationAccessKey = window.GlobalLocationAccessKey; // set by globalFirebase
+            }
+            let campaignList = [];
+            const html = (strings, ...values) =>
+                strings.reduce(
+                    (acc, str, i) => acc + str + (values[i] ?? ""),
+                    "",
+                );
+            let app = html`<!doctype html>
+                <html lang="en">
+                    <head>
+                        <meta charset="UTF-8" />
+                        <meta
+                            name="viewport"
+                            content="width=device-width, initial-scale=1.0"
+                        />
+                        <title>Send to School (Mockup)</title>
+                        <link
+                            rel="icon"
+                            href="https://kairoscloud.github.io/main/Assets/favicon.png"
+                            type="image/x-icon"
+                        />
+                        <style>
+                            :root {
+                                --font-family:
+                                    -apple-system, BlinkMacSystemFont,
+                                    "Segoe UI", Roboto, Helvetica, Arial,
+                                    sans-serif;
+                                --background-color: #ffffff;
+                                --text-primary: #1c1c1e;
+                                --text-secondary: #6c757d;
+                                --border-color: #ced4da;
+                                --input-bg: #f0f2f5;
+                                --button-bg: #4479ce;
+                                --button-text: #ffffff;
+                                --border-radius: 12px;
                             }
 
-                            /* Adjust padding for stacked layout to provide consistent spacing. */
-                            .main-content,
-                            .sidebar {
-                                padding-left: 1.5rem;
-                                padding-right: 1.5rem;
-                            }
-
-                            .sidebar {
-                                border-left: none;
-                                border-top: 1px solid #e5e5e5;
-                                padding-top: 2rem;
-                                max-height: none;
-                                overflow-y: visible;
-                            }
-                        }
-
-                        /* Breakpoint 2: Mobile phones (<= 768px) */
-                        @media (max-width: 768px) {
                             body {
-                                padding: 1.5rem 0;
+                                font-family: var(--font-family);
+                                background-color: var(--background-color);
+                                color: var(--text-primary);
+                                margin: 0;
+                                /* CHANGE: Removed horizontal padding to make layout full-width. */
+                                padding: 1.3rem 0;
+                                display: flex;
+                                justify-content: center;
+                                box-sizing: border-box;
+                                overflow-y: hidden;
                             }
 
-                            /* Further reduce padding for small screens. */
-                            .main-content,
-                            .sidebar {
-                                padding-left: 1rem;
-                                padding-right: 1rem;
+                            .container {
+                                display: flex;
+                                gap: 2rem;
+                                width: 100%;
+                                /* CHANGE: Removed max-width to let the container hug the screen edges. */
                             }
 
-                            .main-content h1,
-                            .sidebar-header h2,
-                            .sidebar-header .count {
-                                font-size: 1.75rem;
+                            /* --- Main Content (Left Column) --- */
+                            .main-content {
+                                flex: 2 1 65%;
+                                display: flex;
+                                flex-direction: column;
+                                min-width: 0;
+                                /* CHANGE: Added padding here to keep content off the screen edge. */
+                                padding-left: 2rem;
+                            }
+
+                            .main-content h1 {
+                                font-size: 2rem;
+                                font-weight: 700;
+                                margin-top: 0;
                             }
 
                             .form-and-previews {
-                                flex-direction: column;
-                                gap: 2.5rem;
-                            }
-
-                            /* Reset the alignment hack, as columns are now stacked. */
-                            .send-form .form-group:nth-of-type(5) {
-                                margin-bottom: 0;
-                            }
-
-                            .form-actions {
-                                flex-direction: column;
+                                display: flex;
+                                gap: 2rem;
+                                /* Ensures both columns stretch to the same height for alignment. */
                                 align-items: stretch;
                             }
 
+                            .send-form {
+                                flex: 1 1 55%;
+                                display: flex;
+                                flex-direction: column;
+                                gap: 1.5rem;
+                                min-width: 0;
+                            }
+
+                            /*
+                            REASON: This is the key change for the vertical alignment request.
+                            It selects the form group before "Additional Text" and applies a margin.
+                            'margin-bottom: auto' pushes all subsequent items to the bottom of the
+                            flex container, aligning the "Additional Text" box with the "Notes"
+                            box in the adjacent column.
+                            */
+                            .send-form .form-group:nth-of-type(4) {
+                                margin-bottom: auto;
+                            }
+
+                            .form-group {
+                                display: flex;
+                                flex-direction: column;
+                                gap: 0.5rem;
+                            }
+
+                            .form-group label {
+                                font-weight: 600;
+                                font-size: 0.9rem;
+                            }
+
+                            .form-input,
+                            .form-textarea {
+                                width: 100%;
+                                padding: 0.8rem 1rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: var(--border-radius);
+                                font-size: 1rem;
+                                font-family: var(--font-family);
+                                box-sizing: border-box;
+                            }
+
+                            .form-input::placeholder,
+                            .form-textarea::placeholder {
+                                color: var(--text-secondary);
+                            }
+
+                            .select-wrapper {
+                                position: relative;
+                            }
+
+                            .form-select {
+                                appearance: none;
+                                -webkit-appearance: none;
+                                -moz-appearance: none;
+                                width: 100%;
+                                padding: 0.8rem 1rem;
+                                border: 1px solid var(--input-bg);
+                                background-color: var(--input-bg);
+                                border-radius: var(--border-radius);
+                                font-size: 1rem;
+                                color: var(--text-secondary);
+                                font-family: var(--font-family);
+                                cursor: pointer;
+                            }
+
+                            .select-wrapper::after {
+                                content: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%236c757d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+                                position: absolute;
+                                right: 1rem;
+                                top: 50%;
+                                transform: translateY(-50%);
+                                pointer-events: none;
+                            }
+
+                            .form-textarea {
+                                height: 120px;
+                                resize: vertical;
+                                resize: none;
+                            }
+
+                            .form-actions {
+                                display: flex;
+                                gap: 1rem;
+                                align-items: flex-end;
+                                /*padding-top: 1rem;*/
+                            }
+
                             .send-button {
-                                margin-left: 0;
+                                background-color: var(--button-bg);
+                                color: var(--button-text);
+                                font-weight: 600;
+                                border: none;
+                                padding: 0.8rem 2.5rem;
+                                border-radius: var(--border-radius);
+                                font-size: 1rem;
+                                cursor: pointer;
+                                margin-left: auto;
+                                display: flex; /* NEW: For aligning spinner */
+                                align-items: center; /* NEW: For aligning spinner */
+                                justify-content: center; /* NEW: For aligning spinner */
+                                gap: 0.5rem; /* NEW: For spacing spinner */
+                            }
+
+                            .send-button:disabled {
+                                background-color: #a0b8da;
+                                cursor: not-allowed;
+                            }
+
+                            /* --- Preview Panes --- */
+                            .previews {
+                                flex: 1 1 45%;
+                                display: flex;
+                                flex-direction: column;
+                                gap: 1.5rem;
+                                min-width: 0;
+                            }
+
+                            .preview-group {
+                                display: flex;
+                                flex-direction: column;
+                                gap: 0.5rem;
+                            }
+
+                            .preview-group label {
+                                font-weight: 600;
+                                font-size: 0.9rem;
+                            }
+
+                            #email-preview-box {
+                                background-color: var(--input-bg);
+                                border-radius: var(--border-radius);
+                                height: 369px;
+                                overflow-y: auto;
+                                padding: 1rem;
+                                box-sizing: border-box;
+                            }
+
+                            #email-preview-iframe {
+                                width: 100%;
+                                height: 100%;
+                                border: none;
+                                background-color: #ffffff;
+                            }
+
+                            /* --- Sidebar (Right Column) --- */
+                            .sidebar {
+                                flex: 1 1 35%;
+                                min-width: 260px;
+                                max-width: 300px;
+                                padding-left: 2rem;
+                                border-left: 1px solid #e5e5e5;
+                                max-height: 95vh;
+                                overflow-y: auto;
+                                padding-right: 2rem;
+                            }
+
+                            .sidebar-header {
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                margin-bottom: 2rem;
+                            }
+
+                            .sidebar-header h2 {
+                                font-size: 2rem;
+                                font-weight: 700;
+                                margin: 0;
+                                display: inline-block;
+                            }
+
+                            .sidebar-header .count {
+                                font-size: 2rem;
+                                font-weight: 400;
+                                color: var(--text-secondary);
+                                margin-left: 0.75rem;
+                            }
+
+                            /* NEW: Styles for relocated error messages */
+                            .sidebar-error-item {
+                                background-color: #f8d7da; /* Light red */
+                                border: 1px solid #f5c6cb; /* Darker red border */
+                                color: #721c24; /* Dark red text */
+                                border-radius: var(
+                                    --border-radius
+                                ); /* Match scheduled-item */
+                                padding: 1rem; /* Match scheduled-item */
+                                margin-bottom: 1rem; /* Space below it */
+                                font-size: 0.9rem;
+                                line-height: 1.4;
+                                opacity: 1;
+                                transition: opacity 0.5s ease-out;
+                            }
+
+                            .sidebar-error-item.fade-out {
+                                opacity: 0;
+                            }
+
+                            .scheduled-list {
+                                display: flex;
+                                flex-direction: column;
+                                gap: 1rem;
+                            }
+
+                            .scheduled-item {
+                                background-color: var(--background-color);
+                                border: 1px solid var(--border-color);
+                                border-radius: var(--border-radius);
                                 padding: 1rem;
                             }
 
-                            .form-actions .form-input {
-                                width: 100% !important;
+                            .scheduled-item .subject {
+                                font-weight: 600;
+                                margin-bottom: 0.25rem;
                             }
-                        }
 
-                        #adminContactContainer {
-                            height: 20px;
-                            background-color: #f0f2f5;
-                            margin-top: -15px;
-                            margin-bottom: 10px;
-                            padding: 3px;
-                            padding-left: 16px;
-                            border-radius: 6px;
-                            color: #6c757d;
-                            display: flex;
-                            align-items: center;
-                        }
-
-                        .no-scheduled-emails {
-                            color: #6c757d;
-                            font-size: 0.875rem;
-                            margin-top: -1.25rem;
-                            margin-bottom: 1.5rem;
-                        }
-
-                        /* NEW: Style for validation error messages */
-                        .validation-error {
-                            color: #dc3545; /* Bootstrap's danger red */
-                            font-size: 0.875rem;
-                            margin-top: -1.25rem;
-                            margin-bottom: 1.5rem;
-                        }
-
-                        #arw {
-                            margin-right: 6px;
-                        }
-                        /* Spinner */
-                        .spinner {
-                            border: 2px solid #f3f3f3;
-                            border-top: 2px solid var(--button-bg);
-                            border-radius: 50%;
-                            width: 14px;
-                            height: 14px;
-                            animation: spin 1s linear infinite;
-                            display: inline-block;
-                            margin-right: 8px;
-                        }
-
-                        /* NEW: Spinner used on send button */
-                        .button-spinner {
-                            border-top-color: var(--button-text);
-                            margin-right: 0;
-                        }
-
-                        @keyframes spin {
-                            0% {
-                                transform: rotate(0deg);
+                            .scheduled-item .details {
+                                font-size: 0.9rem;
+                                color: var(--text-secondary);
                             }
-                            100% {
-                                transform: rotate(360deg);
+
+                            /* --- MEDIA QUERIES FOR RESPONSIVE DESIGN --- */
+                            @media (max-width: 1024px) {
+                                .container {
+                                    flex-direction: column;
+                                    gap: 3rem;
+                                }
+                                .main-content,
+                                .sidebar {
+                                    padding-left: 1.5rem;
+                                    padding-right: 1.5rem;
+                                }
+                                .sidebar {
+                                    border-left: none;
+                                    border-top: 1px solid #e5e5e5;
+                                    padding-top: 2rem;
+                                    max-height: none;
+                                    overflow-y: visible;
+                                }
                             }
-                        }
-                        /* Checkmark */
-                        .checkmark {
-                            display: inline-block;
-                            margin-right: 8px;
-                            color: #28a745; /* green */
-                            font-weight: bold;
-                            font-size: 16px;
-                            line-height: 1;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <main class="main-content">
-                            <h1>Send</h1>
-                            <div class="form-and-previews">
-                                <form
-                                    class="send-form"
-                                    action="#"
-                                    method="post"
-                                >
-                                    <div class="form-group">
-                                        <label for="admin-email"
-                                            >Administrator Email</label
-                                        >
-                                        <input
-                                            type="email"
-                                            id="admin-email"
-                                            name="admin_email"
-                                            class="form-input"
-                                            placeholder="administrator@school.com"
-                                            oninput="handleAdminInput(this.value)"
-                                        />
-                                    </div>
-                                    <div id="adminContactContainer"></div>
-                                    <div
-                                        id="admin-email-error"
-                                        class="validation-error"
-                                    ></div>
 
-                                    <div class="form-group">
-                                        <label for="campaign"
-                                            >Select Campaign</label
-                                        >
-                                        <div class="select-wrapper">
-                                            <select
-                                                id="campaign"
-                                                name="campaign"
-                                                class="form-select"
-                                            >
-                                                ${await getCampaignList()}
-                                            </select>
-                                        </div>
-                                    </div>
+                            @media (max-width: 768px) {
+                                body {
+                                    padding: 1.5rem 0;
+                                }
+                                .main-content,
+                                .sidebar {
+                                    padding-left: 1rem;
+                                    padding-right: 1rem;
+                                }
+                                .main-content h1,
+                                .sidebar-header h2,
+                                .sidebar-header .count {
+                                    font-size: 1.75rem;
+                                }
+                                .form-and-previews {
+                                    flex-direction: column;
+                                    gap: 2.5rem;
+                                }
+                                .send-form .form-group:nth-of-type(4) {
+                                    margin-bottom: 0;
+                                }
+                                .form-actions {
+                                    flex-direction: column;
+                                    align-items: stretch;
+                                }
+                                .send-button {
+                                    margin-left: 0;
+                                    padding: 1rem;
+                                }
+                                .form-actions .form-input {
+                                    width: 100% !important;
+                                }
+                            }
 
-                                    <div class="form-group">
-                                        <label for="email-template"
-                                            >Select Email Template</label
-                                        >
-                                        <div class="select-wrapper">
-                                            <select
-                                                id="email-template"
-                                                name="email_template"
-                                                class="form-select"
-                                            >
-                                                <option>
-                                                    Example Template
-                                                </option>
-                                            </select>
-                                        </div>
-                                    </div>
+                            #adminContactContainer {
+                                height: 20px;
+                                background-color: #f0f2f5;
+                                margin-top: -15px;
+                                padding: 3px;
+                                padding-left: 16px;
+                                border-radius: 6px;
+                                color: #6c757d;
+                                display: flex;
+                                align-items: center;
+                            }
 
-                                    <!-- <div class="form-group">
-                                    <label for="text-template"
-                                        >Select Text Template</label
+                            .no-scheduled-emails {
+                                color: #6c757d;
+                                font-size: 0.875rem;
+                                margin-top: -1.25rem;
+                                margin-bottom: 1.5rem;
+                            }
+
+                            #arw {
+                                margin-right: 6px;
+                            }
+                            .spinner {
+                                border: 2px solid #f3f3f3;
+                                border-top: 2px solid var(--button-bg);
+                                border-radius: 50%;
+                                width: 14px;
+                                height: 14px;
+                                animation: spin 1s linear infinite;
+                                display: inline-block;
+                                margin-right: 8px;
+                            }
+
+                            .button-spinner {
+                                border-top-color: var(--button-text);
+                                margin-right: 0;
+                            }
+
+                            @keyframes spin {
+                                0% {
+                                    transform: rotate(0deg);
+                                }
+                                100% {
+                                    transform: rotate(360deg);
+                                }
+                            }
+                            .checkmark {
+                                display: inline-block;
+                                margin-right: 8px;
+                                color: #28a745;
+                                font-weight: bold;
+                                font-size: 16px;
+                                line-height: 1;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <main class="main-content">
+                                <h1>Send</h1>
+                                <div class="form-and-previews">
+                                    <form
+                                        class="send-form"
+                                        action="#"
+                                        method="post"
+                                        novalidate
                                     >
-                                    <div class="select-wrapper">
-                                        <select
-                                            id="text-template"
-                                            name="text_template"
-                                            class="form-select"
-                                        >
-                                            <option>Example Template</option>
-                                        </select>
-                                    </div>
-                                </div> -->
-
-                                    <div class="form-group">
-                                        <label for="additional-text"
-                                            >Additional Text</label
-                                        >
-                                        <textarea
-                                            id="additional-text"
-                                            name="additional_text"
-                                            class="form-textarea"
-                                        >
-Hello Jane, please send this to all Senior parents.</textarea
-                                        >
-                                    </div>
-
-                                    <div class="form-actions">
                                         <div class="form-group">
-                                            <label for="send-on">Send on</label>
+                                            <label for="admin-email"
+                                                >Administrator Email</label
+                                            >
                                             <input
-                                                type="datetime-local"
-                                                id="send-on"
-                                                name="send_on"
+                                                type="email"
+                                                id="admin-email"
+                                                name="admin_email"
                                                 class="form-input"
-                                                placeholder="MM/DD/YY  1:00 PM"
-                                                style="width: 230px"
+                                                placeholder="administrator@school.com"
+                                                required
                                             />
                                         </div>
-                                        <button
-                                            type="submit"
-                                            class="send-button"
-                                            id="send-button"
-                                        >
-                                            Send
-                                        </button>
-                                    </div>
-                                    <div
-                                        id="form-submission-status"
-                                        style="text-align: right; margin-top: 0.5rem;"
-                                    ></div>
-                                </form>
+                                        <div id="adminContactContainer">
+                                            Contact name will appear here
+                                        </div>
 
-                                <div class="previews">
-                                    <div class="preview-group">
-                                        <label>Email Template Preview</label>
-                                        <div id="email-preview-box">
-                                            <!-- Iframe will be injected here -->
+                                        <div class="form-group">
+                                            <label for="cc-email">CC to</label>
+                                            <input
+                                                type="email"
+                                                id="cc-email"
+                                                name="cc_email"
+                                                class="form-input"
+                                                placeholder="cc@example.com"
+                                            />
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="campaign"
+                                                >Select Campaign</label
+                                            >
+                                            <div class="select-wrapper">
+                                                <select
+                                                    id="campaign"
+                                                    name="campaign"
+                                                    class="form-select"
+                                                    required
+                                                >
+                                                    ${await getCampaignList()}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="email-template"
+                                                >Select Email Template</label
+                                            >
+                                            <div class="select-wrapper">
+                                                <select
+                                                    id="email-template"
+                                                    name="email_template"
+                                                    class="form-select"
+                                                    required
+                                                >
+                                                    <option>
+                                                        Example Template
+                                                    </option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="additional-text"
+                                                >Additional Text</label
+                                            >
+                                            <textarea
+                                                id="additional-text"
+                                                name="additional_text"
+                                                class="form-textarea"
+                                                placeholder="Hello Jane, please send this to all Senior parents."
+                                            ></textarea>
+                                        </div>
+
+                                        <div class="form-actions">
+                                            <div class="form-group">
+                                                <label for="send-on"
+                                                    >Send on</label
+                                                >
+                                                <input
+                                                    type="datetime-local"
+                                                    id="send-on"
+                                                    name="send_on"
+                                                    class="form-input"
+                                                    placeholder="MM/DD/YY  1:00 PM"
+                                                    style="width: 230px"
+                                                    required
+                                                />
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                class="send-button"
+                                                id="send-button"
+                                            >
+                                                Send
+                                            </button>
+                                        </div>
+                                        <div
+                                            id="form-submission-status"
+                                            style="text-align: right; margin-top: 0.5rem;"
+                                        ></div>
+                                    </form>
+
+                                    <div class="previews">
+                                        <div class="preview-group">
+                                            <label
+                                                >Email Template Preview</label
+                                            >
+                                            <div id="email-preview-box">
+                                                <!-- Iframe will be injected here -->
+                                            </div>
+                                        </div>
+                                        <div class="preview-group">
+                                            <label for="notes-text"
+                                                >Notes</label
+                                            >
+                                            <textarea
+                                                id="notes-text"
+                                                name="notes_text"
+                                                class="form-textarea"
+                                                placeholder="Internal notes for the administrator..."
+                                                style="height: 120px"
+                                            ></textarea>
                                         </div>
                                     </div>
-                                    <div class="preview-group">
-                                        <label>Text Template Preview</label>
-                                        <textarea
-                                            id="additional-text-preview"
-                                            name="additional_text_preview"
-                                            class="form-textarea"
-                                            style="height: 117px"
-                                            readonly
-                                        ></textarea>
-                                    </div>
                                 </div>
-                            </div>
-                        </main>
+                            </main>
 
-                        <aside class="sidebar">
-                            <div class="sidebar-header">
-                                <h2>Scheduled</h2>
-                                <span class="count">0</span>
-                            </div>
-                            <div class="scheduled-list">
-                                <!-- Dynamically populated by script -->
-                            </div>
-                        </aside>
-                    </div>
-                </body>
-            </html>`;
+                            <aside class="sidebar">
+                                <div class="sidebar-header">
+                                    <h2>Scheduled</h2>
+                                    <span class="count">0</span>
+                                </div>
+                                <!-- MODIFICATION: New container for validation errors -->
+                                <div id="sidebar-error-container"></div>
+                                <div class="scheduled-list">
+                                    <!-- Dynamically populated by script -->
+                                </div>
+                            </aside>
+                        </div>
+                    </body>
+                </html>`;
 
-        document.write(app);
+            document.write(app);
 
-        // --- GLOBAL STATE & CACHE ---
-        const sendForm = document.querySelector(".send-form");
-        const sendButton = document.getElementById("send-button");
-        const adminEmailInput = document.getElementById("admin-email");
-        const adminEmailError = document.getElementById("admin-email-error");
-        const formSubmissionStatus = document.getElementById(
-            "form-submission-status",
-        );
-        const adminContactContainer = document.getElementById(
-            "adminContactContainer",
-        );
-        const campaignSelect = document.getElementById("campaign");
-        const emailTemplateSelect = document.getElementById("email-template");
-        const emailPreviewBox = document.getElementById("email-preview-box");
-        // NEW: Selectors for sidebar elements
-        const scheduledListContainer =
-            document.querySelector(".scheduled-list");
-        const scheduledCountElement = document.querySelector(
-            ".sidebar-header .count",
-        );
+            // --- GLOBAL STATE & CACHE ---
+            const sendForm = document.querySelector(".send-form");
+            const sendButton = document.getElementById("send-button");
+            const adminEmailInput = document.getElementById("admin-email");
+            const ccEmailInput = document.getElementById("cc-email");
+            const formSubmissionStatus = document.getElementById(
+                "form-submission-status",
+            );
+            const adminContactContainer = document.getElementById(
+                "adminContactContainer",
+            );
+            const campaignSelect = document.getElementById("campaign");
+            const emailTemplateSelect =
+                document.getElementById("email-template");
+            const sendOnInput = document.getElementById("send-on");
+            const emailPreviewBox =
+                document.getElementById("email-preview-box");
+            const scheduledListContainer =
+                document.querySelector(".scheduled-list");
+            const scheduledCountElement = document.querySelector(
+                ".sidebar-header .count",
+            );
+            const notesTextInput = document.getElementById("notes-text");
+            const additionalTextInput =
+                document.getElementById("additional-text");
 
-        // NEW: Sync additional text with its preview
-        const additionalTextInput = document.getElementById("additional-text");
-        const additionalTextPreview = document.getElementById(
-            "additional-text-preview",
-        );
-        additionalTextInput.addEventListener("input", () => {
-            additionalTextPreview.value = additionalTextInput.value;
-        });
-        additionalTextPreview.value = additionalTextInput.value; // Initial sync
+            let adminSearchTimeout;
+            let previewUpdateTimeout;
+            let emailTemplates = [];
+            let locationCustomFields = [];
+            let locationCustomValues = [];
+            let selectedAdminContact = null;
+            let lastRenderedHtml = "";
+            let scheduledEmails = []; // MODIFICATION: This is now populated by Firestore.
 
-        let adminSearchTimeout;
-        let emailTemplates = [];
-        let locationCustomFields = [];
-        let selectedAdminContact = null;
-        let lastRenderedHtml = "";
-        let scheduledEmails = []; // NEW: In-memory store for scheduled emails
+            // --- API HELPERS ---
+            async function apiFetch(url, options = {}) {
+                const defaultOptions = {
+                    headers: {
+                        Authorization: "Bearer " + locationAccessKey,
+                        Version: "2021-07-28",
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                };
+                const mergedOptions = { ...defaultOptions, ...options };
+                mergedOptions.headers = {
+                    ...defaultOptions.headers,
+                    ...options.headers,
+                };
 
-        // --- API HELPERS ---
-        async function apiFetch(url, options = {}) {
-            const defaultOptions = {
-                headers: {
-                    Authorization: "Bearer " + locationAccessKey,
-                    Version: "2021-07-28",
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                },
-            };
-            const mergedOptions = { ...defaultOptions, ...options };
-            mergedOptions.headers = {
-                ...defaultOptions.headers,
-                ...options.headers,
-            };
-
-            const response = await fetch(url, mergedOptions);
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`API Error (${response.status}): ${errorText}`);
+                const response = await fetch(url, mergedOptions);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(
+                        `API Error (${response.status}): ${errorText}`,
+                    );
+                }
+                return response.json();
             }
-            return response.json();
-        }
 
-        // --- UI & STATE MANAGEMENT ---
+            // --- NEW: FIRESTORE INTEGRATION ---
+            /**
+             * Fetches upcoming scheduled emails from Firestore for the current location.
+             */
+            async function fetchScheduledEmailsFromFirestore() {
+                try {
+                    const emailsRef = firestore
+                        .collection("scheduled_emails")
+                        .doc(locationID)
+                        .collection("emails");
 
-        /**
-         * NEW: Renders the list of scheduled emails in the sidebar.
-         */
-        function renderScheduledList() {
-            scheduledListContainer.innerHTML = ""; // Clear existing items
-            scheduledCountElement.textContent = scheduledEmails.length;
+                    // Query for emails scheduled in the future
+                    const snapshot = await emailsRef
+                        .where("sendOn", ">", new Date())
+                        .get();
 
-            if (scheduledEmails.length === 0) {
-                scheduledListContainer.innerHTML =
-                    '<span class="no-scheduled-emails">No scheduled emails yet</span>';
-            } else {
-                // Sort by date, newest first, for better UX
-                const sortedEmails = [...scheduledEmails].sort(
-                    (a, b) => b.date - a.date,
-                );
+                    const fetchedEmails = [];
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        fetchedEmails.push({
+                            subject: data.subject,
+                            email: data.to,
+                            date: data.sendOn.toDate(), // Convert Firestore Timestamp to JS Date
+                        });
+                    });
 
-                sortedEmails.forEach((item) => {
-                    const formattedDate = item.date.toLocaleDateString(
-                        "en-US",
-                        {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                        },
+                    scheduledEmails = fetchedEmails; // Replace in-memory array
+                    console.log(
+                        "Successfully fetched scheduled emails from Firestore.",
+                    );
+                } catch (error) {
+                    console.error(
+                        "Error fetching scheduled emails from Firestore:",
+                        error,
+                    );
+                    // Graceful degradation: The app will continue with an empty list.
+                }
+            }
+
+            /**
+             * Saves a new scheduled email to Firestore under the current location.
+             * @param {object} emailData - The email data to save.
+             * @param {string} emailData.subject - The email subject/campaign name.
+             * @param {string} emailData.to - The recipient's email address.
+             * @param {string} emailData.cc - The CC recipient's email address.
+             * @param {string} emailData.body - The full HTML body of the email.
+             * @param {Date} emailData.date - The JavaScript Date object for when to send.
+             */
+            async function saveScheduledEmailToFirestore(emailData) {
+                try {
+                    const emailsRef = firestore
+                        .collection("scheduled_emails")
+                        .doc(locationID)
+                        .collection("emails");
+
+                    const payload = {
+                        sendOn: firebase.firestore.Timestamp.fromDate(
+                            emailData.date,
+                        ), // Convert JS Date to Firestore Timestamp
+                        subject: emailData.subject,
+                        body: emailData.body,
+                        to: emailData.to,
+                        cc: emailData.cc || "", // Ensure cc is at least an empty string
+                    };
+
+                    await emailsRef.add(payload);
+                    console.log(
+                        "Successfully saved scheduled email to Firestore.",
+                    );
+                } catch (error) {
+                    console.error(
+                        "Error saving scheduled email to Firestore:",
+                        error,
+                    );
+                    // Re-throw the error to be caught by the form submission handler
+                    throw new Error("Failed to save schedule to the database.");
+                }
+            }
+
+            // --- UTILITY FUNCTIONS ---
+            const debounce = (func, delay) => {
+                return (...args) => {
+                    clearTimeout(previewUpdateTimeout);
+                    previewUpdateTimeout = setTimeout(
+                        () => func.apply(this, args),
+                        delay,
+                    );
+                };
+            };
+            const debouncedUpdatePreview = debounce(updatePreview, 300);
+
+            // --- UI & STATE MANAGEMENT ---
+
+            function renderScheduledList() {
+                scheduledListContainer.innerHTML = "";
+                scheduledCountElement.textContent = scheduledEmails.length;
+
+                if (scheduledEmails.length === 0) {
+                    scheduledListContainer.innerHTML =
+                        '<span class="no-scheduled-emails">No scheduled emails yet</span>';
+                } else {
+                    const sortedEmails = [...scheduledEmails].sort(
+                        (a, b) => b.date - a.date,
                     );
 
-                    // Use the exact HTML structure from the requirements
-                    const itemHtml = `
+                    sortedEmails.forEach((item) => {
+                        const formattedDate = item.date
+                            .toLocaleString("en-US", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                                hour12: true,
+                            })
+                            .replace(/,(\s\d{1,2}:\d{2}\s[AP]M)/, "$1");
+
+                        const itemHtml = `
                         <div class="scheduled-item">
                             <div class="subject">${item.subject}</div>
                             <div class="details">
@@ -689,348 +767,461 @@ Hello Jane, please send this to all Senior parents.</textarea
                             </div>
                         </div>
                     `;
-                    scheduledListContainer.insertAdjacentHTML(
-                        "beforeend",
-                        itemHtml,
-                    );
-                });
+                        scheduledListContainer.insertAdjacentHTML(
+                            "beforeend",
+                            itemHtml,
+                        );
+                    });
+                }
             }
-        }
 
-        window.handleAdminInput = function handleAdminInput(value) {
-            clearTimeout(adminSearchTimeout);
-            selectedAdminContact = null; // Reset on new input
-            adminEmailError.textContent = ""; // Clear previous errors
+            adminEmailInput.addEventListener("input", (e) => {
+                clearTimeout(adminSearchTimeout);
+                selectedAdminContact = null;
 
-            if (value.length < 3) {
+                const value = e.target.value;
+                if (value.length < 3) {
+                    adminContactContainer.innerHTML =
+                        "Contact name will appear here";
+                    debouncedUpdatePreview();
+                    return;
+                }
                 adminContactContainer.innerHTML =
-                    "Please enter an email address.";
-                updatePreview();
-                return;
+                    '<span class="spinner"></span>Searching...';
+                adminSearchTimeout = setTimeout(async () => {
+                    try {
+                        const contact = await getAdminContact(value);
+                        if (contact) {
+                            selectedAdminContact = contact;
+                            adminContactContainer.innerHTML = `<span class="checkmark">✓</span> ${contact.firstName} ${contact.lastName}`;
+                        } else {
+                            adminContactContainer.innerHTML =
+                                "No contact found.";
+                        }
+                    } catch (error) {
+                        console.error("Error finding admin contact:", error);
+                        adminContactContainer.innerHTML =
+                            "Contact name will appear here";
+                    }
+                    debouncedUpdatePreview();
+                }, 500);
+            });
+
+            // --- DATA FETCHING & INITIALIZATION ---
+            async function getAdminContact(query) {
+                const searchUrl =
+                    "https://services.leadconnectorhq.com/contacts/search";
+                const searchOptions = {
+                    method: "POST",
+                    body: JSON.stringify({
+                        pageLimit: 1,
+                        locationId: locationID,
+                        query: query,
+                    }),
+                };
+
+                const searchData = await apiFetch(searchUrl, searchOptions);
+                const contactStub = searchData.contacts[0];
+
+                if (!contactStub) {
+                    return null;
+                }
+
+                const fullContactUrl = `https://services.leadconnectorhq.com/contacts/${contactStub.id}`;
+                const fullContactData = await apiFetch(fullContactUrl);
+                return fullContactData.contact;
             }
-            adminContactContainer.innerHTML =
-                '<span class="spinner"></span>Searching...';
-            adminSearchTimeout = setTimeout(async () => {
+
+            async function getCampaignList() {
+                let returnVar = `<option value="" disabled selected>Select a campaign</option>`;
+                const campaignsRef = firestore
+                    .collection("campaigns_restructured")
+                    .doc(locationID)
+                    .collection("campaigns");
+
+                const snapshot = await campaignsRef.get();
+                snapshot.forEach((doc) => {
+                    campaignList.push({
+                        id: doc.id,
+                        data: doc.data(),
+                    });
+                    returnVar += `<option value="${doc.id}">${
+                        doc.data().name
+                    }</option>`;
+                });
+                console.log("Campaign list loaded:", campaignList);
+                return returnVar;
+            }
+
+            async function initializeEmailTemplates() {
                 try {
-                    const contact = await getAdminContact(value);
-                    if (contact) {
-                        selectedAdminContact = contact;
-                        adminContactContainer.innerHTML = `<span class="checkmark">✓</span> ${contact.firstName} ${contact.lastName}`;
-                    } else {
-                        adminContactContainer.innerHTML = "No contact found.";
+                    const url = `https://services.leadconnectorhq.com/emails/builder?locationId=${locationID}&limit=100`;
+                    const data = await apiFetch(url, { method: "GET" });
+                    const templates = data.builders || data;
+
+                    if (!Array.isArray(templates)) {
+                        throw new Error(
+                            "Unexpected format for email templates.",
+                        );
+                    }
+                    emailTemplates = templates;
+
+                    let optionsHtml = `<option value="" disabled selected>Select an email template</option>`;
+                    templates.forEach((template) => {
+                        if (template.previewUrl) {
+                            optionsHtml += `<option value="${template.id}">${template.name}</option>`;
+                        }
+                    });
+                    emailTemplateSelect.innerHTML = optionsHtml;
+                } catch (error) {
+                    console.error("Failed to fetch email templates:", error);
+                    emailTemplateSelect.innerHTML = `<option value="" disabled selected>Error loading templates</option>`;
+                }
+            }
+
+            async function fetchCustomFieldDefinitions() {
+                try {
+                    const url = `https://services.leadconnectorhq.com/locations/${locationID}/customFields`;
+                    const data = await apiFetch(url, { method: "GET" });
+                    locationCustomFields = data.customFields || [];
+                    console.log(
+                        "Custom field definitions loaded:",
+                        locationCustomFields,
+                    );
+                } catch (error) {
+                    console.error("Failed to fetch custom fields:", error);
+                }
+            }
+
+            async function fetchCustomValues() {
+                try {
+                    const url = `https://services.leadconnectorhq.com/locations/${locationID}/customValues`;
+                    const data = await apiFetch(url, { method: "GET" });
+                    locationCustomValues = data.customValues || [];
+                    console.log("Custom values loaded:", locationCustomValues);
+
+                    // Pre-populate CC field
+                    const jostensOfficeEmail = locationCustomValues.find(
+                        (cv) =>
+                            cv.fieldKey ===
+                            "{{ custom_values.jostens_office_email }}",
+                    );
+                    if (jostensOfficeEmail && jostensOfficeEmail.value) {
+                        ccEmailInput.value = jostensOfficeEmail.value;
                     }
                 } catch (error) {
-                    console.error("Error finding admin contact:", error);
-                    adminContactContainer.innerHTML = "Error finding contact.";
+                    console.error("Failed to fetch custom values:", error);
                 }
-                updatePreview();
-            }, 500);
-        };
-
-        // --- DATA FETCHING & INITIALIZATION ---
-        window.getAdminContact = async function getAdminContact(query) {
-            const searchUrl =
-                "https://services.leadconnectorhq.com/contacts/search";
-            const searchOptions = {
-                method: "POST",
-                body: JSON.stringify({
-                    pageLimit: 1,
-                    locationId: locationID,
-                    query: query,
-                }),
-            };
-
-            const searchData = await apiFetch(searchUrl, searchOptions);
-            const contactStub = searchData.contacts[0];
-
-            if (!contactStub) {
-                return null;
             }
 
-            // Fetch the full contact object to ensure custom fields are included
-            const fullContactUrl = `https://services.leadconnectorhq.com/contacts/${contactStub.id}`;
-            const fullContactData = await apiFetch(fullContactUrl);
-            return fullContactData.contact; // The full object is nested
-        };
+            // --- CORE PREVIEW LOGIC (NOW WITH IFRAME) ---
+            async function updatePreview() {
+                const campaignId = campaignSelect.value;
+                const templateId = emailTemplateSelect.value;
 
-        async function getCampaignList() {
-            let returnVar = `<option value="" disabled selected>Select a campaign</option>`;
-            const campaignsRef = firestore
-                .collection("campaigns_restructured")
-                .doc(locationID)
-                .collection("campaigns");
+                const renderInIframe = (content, style = "") => {
+                    emailPreviewBox.innerHTML = "";
+                    const iframe = document.createElement("iframe");
+                    iframe.id = "email-preview-iframe";
+                    iframe.setAttribute("sandbox", "allow-same-origin");
+                    emailPreviewBox.appendChild(iframe);
+                    iframe.srcdoc = content;
+                    lastRenderedHtml = content;
+                };
 
-            const snapshot = await campaignsRef.get();
-            snapshot.forEach((doc) => {
-                campaignList.push({
-                    id: doc.id,
-                    data: doc.data(),
-                });
-                returnVar += `<option value="${doc.id}">${doc.data().name}</option>`;
-            });
-            console.log("Campaign list loaded:", campaignList);
-            return returnVar;
-        }
-
-        async function initializeEmailTemplates() {
-            try {
-                const url = `https://services.leadconnectorhq.com/emails/builder?locationId=${locationID}&limit=100`;
-                const data = await apiFetch(url, { method: "GET" });
-                const templates = data.builders || data;
-
-                if (!Array.isArray(templates)) {
-                    throw new Error("Unexpected format for email templates.");
+                if (!selectedAdminContact || !campaignId || !templateId) {
+                    const placeholder =
+                        '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select an administrator, campaign, and template to see a preview.</p></body>';
+                    renderInIframe(placeholder);
+                    return;
                 }
-                emailTemplates = templates;
 
-                let optionsHtml = `<option value="" disabled selected>Select an email template</option>`;
-                templates.forEach((template) => {
-                    if (template.previewUrl) {
-                        optionsHtml += `<option value="${template.id}">${template.name}</option>`;
+                renderInIframe(
+                    '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Loading...</p></body>',
+                );
+
+                try {
+                    const selectedCampaign = campaignList.find(
+                        (c) => c.id === campaignId,
+                    ).data;
+                    const selectedTemplate = emailTemplates.find(
+                        (t) => t.id === templateId,
+                    );
+
+                    const templateHtmlResponse = await fetch(
+                        selectedTemplate.previewUrl,
+                    ).then((res) => res.text());
+                    let finalHtml = templateHtmlResponse;
+
+                    const replaceRaw = (text, placeholder, value) => {
+                        const regex = new RegExp(
+                            placeholder.replace(
+                                /[-\/\\^$*+?.()|[\]{}]/g,
+                                "\\$&",
+                            ),
+                            "g",
+                        );
+                        return text.replace(regex, value || "");
+                    };
+                    const replace = (text, key, value) =>
+                        replaceRaw(text, `{{contact.${key}}}`, value);
+
+                    // 1. Manual Fields
+                    finalHtml = replace(
+                        finalHtml,
+                        "send_to_school_notes",
+                        notesTextInput.value,
+                    );
+                    finalHtml = replace(
+                        finalHtml,
+                        "send_to_school_message",
+                        additionalTextInput.value,
+                    );
+
+                    // 2. Campaign Data
+                    Object.entries(selectedCampaign).forEach(([key, value]) => {
+                        const mapping = {
+                            name: "school_name",
+                            schoolLocation: "school_location",
+                            mascot: "school_mascot",
+                            schoolLogo: "school_logo_link",
+                            jostensWebsiteLink: "jostens_website_link",
+                            landingPage1: "landing_page_1",
+                            landingPage2: "landing_page_2",
+                            orderDueDate: "order_due_date",
+                        };
+                        if (mapping[key]) {
+                            finalHtml = replace(finalHtml, mapping[key], value);
+                        }
+                    });
+
+                    // 3. Standard Contact Fields
+                    finalHtml = replace(
+                        finalHtml,
+                        "first_name",
+                        selectedAdminContact.firstName,
+                    );
+                    finalHtml = replace(
+                        finalHtml,
+                        "last_name",
+                        selectedAdminContact.lastName,
+                    );
+                    finalHtml = replace(
+                        finalHtml,
+                        "name",
+                        selectedAdminContact.name,
+                    );
+                    finalHtml = replace(
+                        finalHtml,
+                        "email",
+                        selectedAdminContact.email,
+                    );
+
+                    // 4. Custom Contact Fields
+                    if (
+                        Array.isArray(selectedAdminContact.customField) &&
+                        locationCustomFields.length > 0
+                    ) {
+                        const customFieldKeyMap = locationCustomFields.reduce(
+                            (acc, field) => {
+                                acc[field.id] = field.fieldKey;
+                                return acc;
+                            },
+                            {},
+                        );
+
+                        selectedAdminContact.customField.forEach(
+                            (contactField) => {
+                                const fieldKey =
+                                    customFieldKeyMap[contactField.id];
+                                if (fieldKey && contactField.value) {
+                                    finalHtml = replaceRaw(
+                                        finalHtml,
+                                        `{{${fieldKey}}}`,
+                                        contactField.value,
+                                    );
+                                }
+                            },
+                        );
                     }
-                });
-                emailTemplateSelect.innerHTML = optionsHtml;
-            } catch (error) {
-                console.error("Failed to fetch email templates:", error);
-                emailTemplateSelect.innerHTML = `<option value="" disabled selected>Error loading templates</option>`;
-            }
-        }
 
-        async function fetchCustomFieldDefinitions() {
-            try {
-                const url = `https://services.leadconnectorhq.com/locations/${locationID}/customFields`;
-                const data = await apiFetch(url, { method: "GET" });
-                locationCustomFields = data.customFields || [];
-                console.log(
-                    "Custom field definitions loaded:",
-                    locationCustomFields,
-                );
-            } catch (error) {
-                console.error("Failed to fetch custom fields:", error);
-            }
-        }
+                    // 5. Location Custom Values
+                    if (locationCustomValues.length > 0) {
+                        locationCustomValues.forEach((cv) => {
+                            if (cv.fieldKey && cv.value) {
+                                finalHtml = replaceRaw(
+                                    finalHtml,
+                                    cv.fieldKey,
+                                    cv.value,
+                                );
+                            }
+                        });
+                    }
 
-        // --- CORE PREVIEW LOGIC (NOW WITH IFRAME) ---
-        async function updatePreview() {
-            const campaignId = campaignSelect.value;
-            const templateId = emailTemplateSelect.value;
+                    // 6. Cleanup remaining placeholders
+                    finalHtml = finalHtml.replace(/{{(.*?)}}/g, "");
 
-            // NEW: Render placeholder content into the iframe
-            const renderInIframe = (content) => {
-                emailPreviewBox.innerHTML = ""; // Clear previous content
-                const iframe = document.createElement("iframe");
-                iframe.id = "email-preview-iframe";
-                iframe.setAttribute("sandbox", "allow-same-origin"); // For security
-                emailPreviewBox.appendChild(iframe);
-                iframe.srcdoc = content;
-                lastRenderedHtml = content; // Cache the content
-            };
-
-            // 1. Check if all conditions are met
-            if (!selectedAdminContact || !campaignId || !templateId) {
-                const placeholder =
-                    '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select an administrator, campaign, and template to see a preview.</p></body>';
-                renderInIframe(placeholder);
-                return;
-            }
-
-            renderInIframe(
-                '<p style="padding: 1rem; text-align:center; color: var(--text-secondary);">Loading preview...</p>',
-            );
-
-            try {
-                // 2. Gather all required data
-                const selectedCampaign = campaignList.find(
-                    (c) => c.id === campaignId,
-                ).data;
-                const selectedTemplate = emailTemplates.find(
-                    (t) => t.id === templateId,
-                );
-
-                const [ghlValuesResponse, templateHtmlResponse] =
-                    await Promise.all([
-                        apiFetch(
-                            `https://services.leadconnectorhq.com/locations/${locationID}/customValues`,
-                        ),
-                        fetch(selectedTemplate.previewUrl).then((res) =>
-                            res.text(),
-                        ),
-                    ]);
-
-                const ghlCustomValues = ghlValuesResponse.customValues || [];
-                let finalHtml = templateHtmlResponse;
-
-                // 3. MERGE DATA (IN ORDER OF PRECEDENCE)
-                Object.keys(selectedCampaign).forEach((key) => {
-                    let placeholderKey = key
-                        .replace(/([A-Z])/g, "_$1")
-                        .toLowerCase();
-                    if (key === "name") placeholderKey = "campaign_name";
-                    if (key === "mascot") placeholderKey = "school_mascot";
-                    const placeholder = `{{contact.${placeholderKey}}}`;
-                    const regex = new RegExp(
-                        placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
-                        "g",
-                    );
-                    finalHtml = finalHtml.replace(
-                        regex,
-                        selectedCampaign[key] || "",
-                    );
-                });
-                const standardFieldMap = {
-                    first_name: selectedAdminContact.firstName,
-                    last_name: selectedAdminContact.lastName,
-                    name: selectedAdminContact.name,
-                    email: selectedAdminContact.email,
-                };
-                for (const [key, value] of Object.entries(standardFieldMap)) {
-                    const placeholder = `{{contact.${key}}}`;
-                    const regex = new RegExp(
-                        placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
-                        "g",
-                    );
-                    finalHtml = finalHtml.replace(regex, value || "");
+                    renderInIframe(finalHtml);
+                } catch (error) {
+                    console.error("Error updating preview:", error);
+                    const errorHtml = `<p style="padding: 1rem; color: red;">Could not load preview. ${error.message}</p>`;
+                    renderInIframe(errorHtml);
                 }
-                finalHtml = finalHtml.replace(/{{(.*?)}}/g, "");
-
-                // 4. Render the final HTML into the iframe
-                renderInIframe(finalHtml);
-            } catch (error) {
-                console.error("Error updating preview:", error);
-                const errorHtml = `<p style="padding: 1rem; color: red;">Could not load preview. ${error.message}</p>`;
-                renderInIframe(errorHtml);
-            }
-        }
-
-        // --- FORM VALIDATION & SUBMISSION ---
-
-        function validateForm() {
-            adminEmailError.textContent = ""; // Clear previous errors
-            let isValid = true;
-
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(adminEmailInput.value)) {
-                adminEmailError.textContent =
-                    "Please enter a valid email address format (e.g., user@domain.com).";
-                isValid = false;
             }
 
-            if (!selectedAdminContact) {
-                adminEmailError.textContent =
-                    "Please select a valid administrator contact.";
-                isValid = false;
-            } else if (!selectedAdminContact.email) {
-                adminEmailError.textContent =
-                    "The selected administrator contact does not have an email address.";
-                isValid = false;
-            }
+            // --- FORM VALIDATION & SUBMISSION ---
 
-            if (!campaignSelect.value) {
-                isValid = false;
-            }
-            if (!emailTemplateSelect.value) {
-                isValid = false;
-            }
+            function validateForm() {
+                const errorContainer = document.getElementById(
+                    "sidebar-error-container",
+                );
+                errorContainer.innerHTML = "";
 
-            return isValid;
-        }
+                const errors = [];
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-        async function handleFormSubmit(event) {
-            event.preventDefault();
-
-            if (!validateForm()) {
-                formSubmissionStatus.innerHTML = `<span style="color: #dc3545;">Please fix the errors above.</span>`;
-                return;
-            }
-
-            sendButton.disabled = true;
-            sendButton.innerHTML =
-                '<span class="spinner button-spinner"></span>Sending...';
-            formSubmissionStatus.textContent = "";
-
-            try {
-                const additionalText =
-                    document.getElementById("additional-text").value;
-                const campaignName =
-                    campaignSelect.options[campaignSelect.selectedIndex].text;
-                const sendOnValue = document.getElementById("send-on").value;
-
-                const finalEmailBody = `
-                    <p>Hello,</p>
-                    <p>You have received a new message request for the "<strong>${campaignName}</strong>" campaign with the following instructions:</p>
-                    <blockquote style="border-left: 4px solid #ccc; padding-left: 1rem; margin-left: 0;">
-                        <p>${additionalText.replace(/\n/g, "<br>")}</p>
-                    </blockquote>
-                    <hr style="margin: 2rem 0;">
-                    <h3>Email Preview:</h3>
-                    ${lastRenderedHtml}
-                `;
-
-                const payload = {
-                    type: "Email",
-                    contactId: selectedAdminContact.id,
-                    emailTo: selectedAdminContact.email,
-                    subject: `Message Request for Campaign: ${campaignName}`,
-                    html: finalEmailBody,
-                };
-
-                let scheduledDate = null; // To store the date object for our state
-                if (sendOnValue) {
-                    const date = new Date(sendOnValue);
-                    scheduledDate = date;
-                    payload.scheduledTimestamp = Math.floor(
-                        date.getTime() / 1000,
-                    );
+                if (!selectedAdminContact) {
+                    errors.push("A valid Administrator contact is required.");
+                }
+                if (!campaignSelect.value) {
+                    errors.push("A Campaign must be selected.");
+                }
+                if (!emailTemplateSelect.value) {
+                    errors.push("An Email Template must be selected.");
+                }
+                if (!sendOnInput.value) {
+                    errors.push("The 'Send on' date is required.");
                 }
 
-                await apiFetch(
-                    "https://services.leadconnectorhq.com/conversations/messages",
-                    {
-                        method: "POST",
-                        headers: {
-                            Version: "2021-04-15",
+                if (
+                    ccEmailInput.value &&
+                    !emailRegex.test(ccEmailInput.value)
+                ) {
+                    errors.push("The CC email address is not a valid format.");
+                }
+
+                if (errors.length > 0) {
+                    const errorDiv = document.createElement("div");
+                    errorDiv.className = "sidebar-error-item";
+                    errorDiv.innerHTML = errors.join("<br>");
+                    errorContainer.appendChild(errorDiv);
+
+                    setTimeout(() => {
+                        errorDiv.classList.add("fade-out");
+                        setTimeout(() => {
+                            if (errorDiv.parentNode) {
+                                errorDiv.parentNode.removeChild(errorDiv);
+                            }
+                        }, 500);
+                    }, 5000);
+                }
+
+                return errors.length === 0;
+            }
+
+            async function handleFormSubmit(event) {
+                event.preventDefault();
+                formSubmissionStatus.textContent = "";
+
+                if (!validateForm()) {
+                    return;
+                }
+
+                sendButton.disabled = true;
+                sendButton.innerHTML =
+                    '<span class="spinner button-spinner"></span>Sending...';
+
+                try {
+                    const campaignName =
+                        campaignSelect.options[campaignSelect.selectedIndex]
+                            .text;
+
+                    const finalEmailBody = lastRenderedHtml;
+                    const date = new Date(sendOnInput.value);
+
+                    const payload = {
+                        type: "Email",
+                        contactId: selectedAdminContact.id,
+                        emailTo: selectedAdminContact.email,
+                        subject: `Message Request for Campaign: ${campaignName}`,
+                        html: finalEmailBody,
+                        scheduledTimestamp: Math.floor(date.getTime() / 1000),
+                    };
+
+                    if (ccEmailInput.value) {
+                        payload.emailCc = [ccEmailInput.value];
+                    }
+
+                    // MODIFICATION: Call the Firestore save function *before* updating UI
+                    await saveScheduledEmailToFirestore({
+                        subject: campaignName,
+                        to: selectedAdminContact.email,
+                        cc: ccEmailInput.value,
+                        body: finalEmailBody,
+                        date: date,
+                    });
+
+                    await apiFetch(
+                        "https://services.leadconnectorhq.com/conversations/messages",
+                        {
+                            method: "POST",
+                            headers: { Version: "2021-04-15" },
+                            body: JSON.stringify(payload),
                         },
-                        body: JSON.stringify(payload),
-                    },
-                );
+                    );
 
-                // --- MODIFICATION: SUCCESS FEEDBACK ---
-                sendButton.textContent = "Sent"; // Update button text
-                // Button remains disabled. No more text message.
+                    sendButton.textContent = "Sent";
+                    formSubmissionStatus.innerHTML =
+                        '<span style="color: #28a745;">Message scheduled successfully!</span>';
 
-                // --- MODIFICATION: ADD TO SCHEDULED LIST ---
-                if (sendOnValue && scheduledDate) {
+                    // MODIFICATION: Update local state and re-render the list
                     const newScheduledItem = {
                         subject: campaignName,
                         email: selectedAdminContact.email,
-                        date: scheduledDate,
+                        date: date,
                     };
                     scheduledEmails.push(newScheduledItem);
-                    renderScheduledList(); // Re-render the sidebar
+                    renderScheduledList();
+
+                    setTimeout(() => {
+                        sendButton.disabled = false;
+                        sendButton.textContent = "Send";
+                        formSubmissionStatus.textContent = "";
+                    }, 3000);
+                } catch (error) {
+                    console.error("API or Database Error:", error);
+                    formSubmissionStatus.innerHTML = `<span style="color: #dc3545;">Failed to schedule message: ${error.message}</span>`;
+                    sendButton.disabled = false;
+                    sendButton.innerHTML = "Send";
                 }
-            } catch (error) {
-                console.error("API Error:", error);
-                formSubmissionStatus.innerHTML = `<span style="color: #dc3545;">Failed to send message: ${error.message}</span>`;
-                // --- MODIFICATION: RESET UI ONLY ON FAILURE ---
-                sendButton.disabled = false;
-                sendButton.innerHTML = "Send";
             }
-        }
 
-        // --- INITIALIZATION & EVENT LISTENERS ---
-        async function initializeApp() {
-            await Promise.all([
-                initializeEmailTemplates(),
-                fetchCustomFieldDefinitions(),
-            ]);
-            renderScheduledList(); // NEW: Set initial state of the sidebar
-            updatePreview(); // Set initial state message
-        }
+            // --- INITIALIZATION & EVENT LISTENERS ---
+            async function initializeApp() {
+                // MODIFICATION: Fetch from Firestore when the app loads.
+                await Promise.all([
+                    fetchScheduledEmailsFromFirestore(),
+                    initializeEmailTemplates(),
+                    fetchCustomFieldDefinitions(),
+                    fetchCustomValues(),
+                ]);
+                renderScheduledList(); // Now renders with data from Firestore.
+                updatePreview();
+            }
 
-        campaignSelect.addEventListener("change", updatePreview);
-        emailTemplateSelect.addEventListener("change", updatePreview);
-        sendForm.addEventListener("submit", handleFormSubmit);
+            campaignSelect.addEventListener("change", debouncedUpdatePreview);
+            emailTemplateSelect.addEventListener(
+                "change",
+                debouncedUpdatePreview,
+            );
+            notesTextInput.addEventListener("input", debouncedUpdatePreview);
+            additionalTextInput.addEventListener(
+                "input",
+                debouncedUpdatePreview,
+            );
+            sendForm.addEventListener("submit", handleFormSubmit);
 
-        initializeApp();
-    })();
-</script>
+            initializeApp();
+        })();
+    </script>
+</html>
