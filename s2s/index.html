@@ -586,6 +586,11 @@
             const sendButton = document.getElementById("send-button");
             const adminEmailInput = document.getElementById("admin-email");
             const ccEmailInput = document.getElementById("cc-email");
+            // get "senderParam" from url param "sender"
+            const senderParam = new URLSearchParams(window.location.search).get(
+                "sender",
+            );
+            console.log("Sender Param: ", senderParam);
             const formSubmissionStatus = document.getElementById(
                 "form-submission-status",
             );
@@ -1142,6 +1147,7 @@
                     const payload = {
                         type: "Email",
                         contactId: selectedAdminContact.id,
+                        emailFrom: senderParam,
                         emailTo: selectedAdminContact.email,
                         subject: `Message Request for Campaign: ${campaignName}`,
                         html: finalEmailBody,
