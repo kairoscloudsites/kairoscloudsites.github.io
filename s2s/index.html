@@ -480,23 +480,23 @@
                                             </div>
                                         </div>
 
+                                        <!-- START MODIFICATION: Replaced email template dropdown with text template dropdown -->
                                         <div class="form-group">
-                                            <label for="email-template"
-                                                >Select Email Template</label
+                                            <label for="text-template"
+                                                >Select Text Template</label
                                             >
                                             <div class="select-wrapper">
                                                 <select
-                                                    id="email-template"
-                                                    name="email_template"
+                                                    id="text-template"
+                                                    name="text_template"
                                                     class="form-select"
                                                     required
                                                 >
-                                                    <option>
-                                                        Example Template
-                                                    </option>
+                                                    <!-- Options populated by JS -->
                                                 </select>
                                             </div>
                                         </div>
+                                        <!-- END MODIFICATION -->
 
                                         <div class="form-group">
                                             <label for="additional-text"
@@ -522,7 +522,6 @@
                                                     class="form-input"
                                                     placeholder="MM/DD/YY  1:00 PM"
                                                     style="width: 230px"
-                                                    required
                                                 />
                                             </div>
                                             <button
@@ -548,24 +547,7 @@
                                                 <!-- Iframe will be injected here -->
                                             </div>
                                         </div>
-                                        <!-- START MODIFICATION -->
-                                        <div class="preview-group">
-                                            <label
-                                                for="prewritten-email-template"
-                                                >Select Pre-written Email
-                                                Template</label
-                                            >
-                                            <div class="select-wrapper">
-                                                <select
-                                                    id="prewritten-email-template"
-                                                    name="prewritten_email_template"
-                                                    class="form-select"
-                                                    required
-                                                >
-                                                    <!-- Options will be populated by JS -->
-                                                </select>
-                                            </div>
-                                        </div>
+                                        <!-- START MODIFICATION: Removed pre-written email template selector -->
                                         <!-- END MODIFICATION -->
                                         <div class="preview-group">
                                             <label for="notes-text"
@@ -617,8 +599,9 @@
                 "adminContactContainer",
             );
             const campaignSelect = document.getElementById("campaign");
-            const emailTemplateSelect =
-                document.getElementById("email-template");
+            // START MODIFICATION: Replace email template selector with text template selector
+            const textTemplateSelect = document.getElementById("text-template");
+            // END MODIFICATION
             const sendOnInput = document.getElementById("send-on");
             const emailPreviewBox =
                 document.getElementById("email-preview-box");
@@ -630,15 +613,16 @@
             const notesTextInput = document.getElementById("notes-text");
             const additionalTextInput =
                 document.getElementById("additional-text");
-            // START MODIFICATION
-            const prewrittenEmailTemplateSelect = document.getElementById(
-                "prewritten-email-template",
-            );
+            // START MODIFICATION: Remove pre-written template selector
             // END MODIFICATION
 
             let adminSearchTimeout;
             let previewUpdateTimeout;
             let emailTemplates = [];
+            // START MODIFICATION: Add state for text templates and the fixed email template
+            let textTemplates = [];
+            let fixedEmailTemplate = null; // This will hold the "Send to School" template object
+            // END MODIFICATION
             let locationCustomFields = [];
             let locationCustomValues = [];
             let selectedAdminContact = null;
@@ -882,6 +866,7 @@
                 return returnVar;
             }
 
+            // START MODIFICATION: Find and set the fixed "Send to School" email template
             async function initializeEmailTemplates() {
                 try {
                     const url = `https://services.leadconnectorhq.com/emails/builder?locationId=${locationID}&limit=100`;
@@ -894,25 +879,45 @@
                         );
                     }
                     emailTemplates = templates;
+                    fixedEmailTemplate = emailTemplates.find(
+                        (t) => t.name === "Send to School",
+                    );
 
-                    let optionsHtml = `<option value="" disabled selected>Select an email template</option>`;
-                    templates.forEach((template) => {
-                        if (template.previewUrl) {
-                            optionsHtml += `<option value="${template.id}">${template.name}</option>`;
-                        }
-                    });
-                    emailTemplateSelect.innerHTML = optionsHtml;
-                    // START MODIFICATION
-                    prewrittenEmailTemplateSelect.innerHTML = optionsHtml;
-                    // END MODIFICATION
+                    if (!fixedEmailTemplate) {
+                        console.error(
+                            'FATAL: The "Send to School" email template (ID: 68768ec371c3e4dd9ca4f492) was not found.',
+                        );
+                        // Optionally, disable the form or show a permanent error message
+                    } else {
+                        console.log(
+                            'Successfully found "Send to School" template.',
+                            fixedEmailTemplate,
+                        );
+                    }
                 } catch (error) {
                     console.error("Failed to fetch email templates:", error);
-                    emailTemplateSelect.innerHTML = `<option value="" disabled selected>Error loading templates</option>`;
-                    // START MODIFICATION
-                    prewrittenEmailTemplateSelect.innerHTML = `<option value="" disabled selected>Error loading templates</option>`;
-                    // END MODIFICATION
                 }
             }
+            // END MODIFICATION
+
+            // START MODIFICATION: New function to fetch and populate SMS/Text templates
+            async function initializeTextTemplates() {
+                try {
+                    const url = `https://services.leadconnectorhq.com/locations/${locationID}/templates?type=sms`;
+                    const data = await apiFetch(url);
+                    textTemplates = data.templates || [];
+
+                    let optionsHtml = `<option value="" disabled selected>Select a text template</option>`;
+                    textTemplates.forEach((template) => {
+                        optionsHtml += `<option value="${template.id}">${template.name}</option>`;
+                    });
+                    textTemplateSelect.innerHTML = optionsHtml;
+                } catch (error) {
+                    console.error("Failed to fetch text templates:", error);
+                    textTemplateSelect.innerHTML = `<option value="" disabled selected>Error loading templates</option>`;
+                }
+            }
+            // END MODIFICATION
 
             async function fetchCustomFieldDefinitions() {
                 try {
@@ -952,10 +957,8 @@
             // --- CORE PREVIEW LOGIC (NOW WITH IFRAME) ---
             async function updatePreview() {
                 const campaignId = campaignSelect.value;
-                const templateId = emailTemplateSelect.value;
-                // START MODIFICATION
-                const prewrittenTemplateId =
-                    prewrittenEmailTemplateSelect.value;
+                // START MODIFICATION: Use fixed template and check text template selection
+                const textTemplateId = textTemplateSelect.value;
                 // END MODIFICATION
 
                 const renderInIframe = (content, style = "") => {
@@ -968,15 +971,15 @@
                     lastRenderedHtml = content;
                 };
 
-                // START MODIFICATION
+                // START MODIFICATION: Update condition for showing preview
                 if (
                     !selectedAdminContact ||
                     !campaignId ||
-                    !templateId ||
-                    !prewrittenTemplateId
+                    !fixedEmailTemplate ||
+                    !textTemplateId
                 ) {
                     const placeholder =
-                        '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select an administrator, campaign, and both email templates to see a preview.</p></body>';
+                        '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select an administrator, campaign, and text template to see a preview.</p></body>';
                     renderInIframe(placeholder);
                     return;
                 }
@@ -990,13 +993,8 @@
                     const selectedCampaign = campaignList.find(
                         (c) => c.id === campaignId,
                     ).data;
-                    const selectedTemplate = emailTemplates.find(
-                        (t) => t.id === templateId,
-                    );
-                    // START MODIFICATION
-                    const selectedPrewrittenTemplate = emailTemplates.find(
-                        (t) => t.id === prewrittenTemplateId,
-                    );
+                    // START MODIFICATION: Use fixedEmailTemplate directly
+                    const selectedTemplate = fixedEmailTemplate;
                     // END MODIFICATION
 
                     const templateHtmlResponse = await fetch(
@@ -1004,11 +1002,7 @@
                     ).then((res) => res.text());
                     let finalHtml = templateHtmlResponse;
 
-                    // START MODIFICATION
-                    const prewrittenTemplateHtmlResponse = await fetch(
-                        selectedPrewrittenTemplate.previewUrl,
-                    ).then((res) => res.text());
-                    let prewrittenHtml = prewrittenTemplateHtmlResponse;
+                    // START MODIFICATION: Remove all pre-written template logic
                     // END MODIFICATION
 
                     const replaceRaw = (text, placeholder, value) => {
@@ -1024,107 +1018,10 @@
                     const replace = (text, key, value) =>
                         replaceRaw(text, `{{contact.${key}}}`, value);
 
-                    // START MODIFICATION: Process pre-written template first to generate mailto link
-                    // 1. Manual Fields (Pre-written)
-                    prewrittenHtml = replace(
-                        prewrittenHtml,
-                        "send_to_school_notes",
-                        notesTextInput.value,
-                    );
-                    prewrittenHtml = replace(
-                        prewrittenHtml,
-                        "send_to_school_message",
-                        additionalTextInput.value,
-                    );
-                    // 2. Campaign Data (Pre-written)
-                    Object.entries(selectedCampaign).forEach(([key, value]) => {
-                        const mapping = {
-                            name: "school_name",
-                            schoolLocation: "school_location",
-                            mascot: "school_mascot",
-                            schoolLogo: "school_logo_link",
-                            jostensWebsiteLink: "jostens_website_link",
-                            landingPage1: "landing_page_1",
-                            landingPage2: "landing_page_2",
-                            orderDueDate: "order_due_date",
-                        };
-                        if (mapping[key]) {
-                            prewrittenHtml = replace(
-                                prewrittenHtml,
-                                mapping[key],
-                                value,
-                            );
-                        }
-                    });
-                    // 3. Standard Contact Fields (Pre-written)
-                    prewrittenHtml = replace(
-                        prewrittenHtml,
-                        "first_name",
-                        selectedAdminContact.firstName,
-                    );
-                    prewrittenHtml = replace(
-                        prewrittenHtml,
-                        "last_name",
-                        selectedAdminContact.lastName,
-                    );
-                    prewrittenHtml = replace(
-                        prewrittenHtml,
-                        "name",
-                        selectedAdminContact.name,
-                    );
-                    prewrittenHtml = replace(
-                        prewrittenHtml,
-                        "email",
-                        selectedAdminContact.email,
-                    );
-                    // 4. Custom Contact Fields (Pre-written)
-                    if (
-                        Array.isArray(selectedAdminContact.customField) &&
-                        locationCustomFields.length > 0
-                    ) {
-                        const customFieldKeyMap = locationCustomFields.reduce(
-                            (acc, field) => {
-                                acc[field.id] = field.fieldKey;
-                                return acc;
-                            },
-                            {},
-                        );
-                        selectedAdminContact.customField.forEach(
-                            (contactField) => {
-                                const fieldKey =
-                                    customFieldKeyMap[contactField.id];
-                                if (fieldKey && contactField.value) {
-                                    prewrittenHtml = replaceRaw(
-                                        prewrittenHtml,
-                                        `{{${fieldKey}}}`,
-                                        contactField.value,
-                                    );
-                                }
-                            },
-                        );
-                    }
-                    // 5. Location Custom Values (Pre-written)
-                    if (locationCustomValues.length > 0) {
-                        locationCustomValues.forEach((cv) => {
-                            if (cv.fieldKey && cv.value) {
-                                prewrittenHtml = replaceRaw(
-                                    prewrittenHtml,
-                                    cv.fieldKey,
-                                    cv.value,
-                                );
-                            }
-                        });
-                    }
-
-                    // Generate mailto link from processed pre-written template
-                    const mailtoSubject = encodeURIComponent(
-                        `Message Regarding Campaign: ${selectedCampaign.name}`,
-                    );
-                    const mailtoBody = encodeURIComponent(prewrittenHtml);
-                    const mailtoLink = `mailto:${selectedAdminContact.email}?subject=${mailtoSubject}&body=${mailtoBody}`;
+                    // START MODIFICATION: Remove processing for pre-written template and mailto link generation
                     // END MODIFICATION
 
-                    // --- Now process the MAIN template ---
+                    // --- Process the MAIN template ---
 
                     // 1. Manual Fields
                     finalHtml = replace(
@@ -1176,11 +1073,11 @@
                         "email",
                         selectedAdminContact.email,
                     );
-                    // START MODIFICATION
+                    // START MODIFICATION: Replace mailto link with a placeholder
                     finalHtml = replaceRaw(
                         finalHtml,
                         "{{contact.send_to_school_email_link}}",
-                        mailtoLink,
+                        "about:blank#placeholder",
                     );
                     // END MODIFICATION
 
@@ -1253,19 +1150,12 @@
                 if (!campaignSelect.value) {
                     errors.push("A Campaign must be selected.");
                 }
-                if (!emailTemplateSelect.value) {
-                    errors.push("An Email Template must be selected.");
+                // START MODIFICATION: Update validation rules
+                if (!textTemplateSelect.value) {
+                    errors.push("A Text Template must be selected.");
                 }
-                // START MODIFICATION
-                if (!prewrittenEmailTemplateSelect.value) {
-                    errors.push(
-                        "A Pre-written Email Template must be selected.",
-                    );
-                }
+                // "Send On" date is now optional, so its validation is removed.
                 // END MODIFICATION
-                if (!sendOnInput.value) {
-                    errors.push("The 'Send on' date is required.");
-                }
 
                 if (
                     ccEmailInput.value &&
@@ -1309,16 +1199,28 @@
                     const campaignName =
                         campaignSelect.options[campaignSelect.selectedIndex]
                             .text;
+                    // START MODIFICATION: Get text template name for subject
+                    const textTemplateName =
+                        textTemplateSelect.options[
+                            textTemplateSelect.selectedIndex
+                        ].text;
+                    const finalSubject = `${campaignName} - ${textTemplateName}`;
+                    // END MODIFICATION
 
                     const finalEmailBody = lastRenderedHtml;
-                    const date = new Date(sendOnInput.value);
+                    // START MODIFICATION: If send date is empty, send immediately
+                    const sendOnValue = sendOnInput.value;
+                    const date = sendOnValue
+                        ? new Date(sendOnValue)
+                        : new Date(); // Use current time if field is empty
+                    // END MODIFICATION
 
                     const payload = {
                         type: "Email",
                         contactId: selectedAdminContact.id,
                         emailFrom: senderParam,
                         emailTo: selectedAdminContact.email,
-                        subject: `Message Request for Campaign: ${campaignName}`,
+                        subject: finalSubject, // Use new subject format
                         html: finalEmailBody,
                         scheduledTimestamp: Math.floor(date.getTime() / 1000),
                     };
@@ -1329,7 +1231,7 @@
 
                     // MODIFICATION: Call the Firestore save function *before* updating UI
                     await saveScheduledEmailToFirestore({
-                        subject: campaignName,
+                        subject: finalSubject, // Use new subject format
                         to: selectedAdminContact.email,
                         cc: ccEmailInput.value,
                         body: finalEmailBody,
@@ -1351,7 +1253,7 @@
 
                     // MODIFICATION: Update local state and re-render the list
                     const newScheduledItem = {
-                        subject: campaignName,
+                        subject: finalSubject, // Use new subject format
                         email: selectedAdminContact.email,
                         date: date,
                     };
@@ -1377,6 +1279,7 @@
                 await Promise.all([
                     fetchScheduledEmailsFromFirestore(),
                     initializeEmailTemplates(),
+                    initializeTextTemplates(), // New call
                     fetchCustomFieldDefinitions(),
                     fetchCustomValues(),
                 ]);
@@ -1385,21 +1288,111 @@
             }
 
             campaignSelect.addEventListener("change", debouncedUpdatePreview);
-            emailTemplateSelect.addEventListener(
-                "change",
-                debouncedUpdatePreview,
-            );
+            // START MODIFICATION: Remove old listeners, add new one for text templates
+            textTemplateSelect.addEventListener("change", () => {
+                const templateId = textTemplateSelect.value;
+                if (!templateId) {
+                    additionalTextInput.value = "";
+                    debouncedUpdatePreview();
+                    return;
+                }
+
+                const selectedTemplate = textTemplates.find(
+                    (t) => t.id === templateId,
+                );
+                let body = selectedTemplate.template.body;
+                const campaignId = campaignSelect.value;
+                const selectedCampaign = campaignList.find(
+                    (c) => c.id === campaignId,
+                )?.data;
+
+                // Apply replacements if possible
+                if (selectedCampaign && selectedAdminContact) {
+                    const replaceRaw = (text, placeholder, value) =>
+                        text.replace(
+                            new RegExp(
+                                placeholder.replace(
+                                    /[-\/\\^$*+?.()|[\]{}]/g,
+                                    "\\$&",
+                                ),
+                                "g",
+                            ),
+                            value || "",
+                        );
+                    const replace = (text, key, value) =>
+                        replaceRaw(text, `{{contact.${key}}}`, value);
+
+                    Object.entries(selectedCampaign).forEach(([key, value]) => {
+                        const mapping = {
+                            name: "school_name",
+                            schoolLocation: "school_location",
+                            mascot: "school_mascot",
+                            schoolLogo: "school_logo_link",
+                            jostensWebsiteLink: "jostens_website_link",
+                            landingPage1: "landing_page_1",
+                            landingPage2: "landing_page_2",
+                            orderDueDate: "order_due_date",
+                        };
+                        if (mapping[key]) {
+                            body = replace(body, mapping[key], value);
+                        }
+                    });
+                    body = replace(
+                        body,
+                        "first_name",
+                        selectedAdminContact.firstName,
+                    );
+                    body = replace(
+                        body,
+                        "last_name",
+                        selectedAdminContact.lastName,
+                    );
+                    body = replace(body, "name", selectedAdminContact.name);
+                    body = replace(body, "email", selectedAdminContact.email);
+
+                    if (
+                        Array.isArray(selectedAdminContact.customField) &&
+                        locationCustomFields.length > 0
+                    ) {
+                        const customFieldKeyMap = locationCustomFields.reduce(
+                            (acc, field) => {
+                                acc[field.id] = field.fieldKey;
+                                return acc;
+                            },
+                            {},
+                        );
+                        selectedAdminContact.customField.forEach(
+                            (contactField) => {
+                                const fieldKey =
+                                    customFieldKeyMap[contactField.id];
+                                if (fieldKey && contactField.value) {
+                                    body = replaceRaw(
+                                        body,
+                                        `{{${fieldKey}}}`,
+                                        contactField.value,
+                                    );
+                                }
+                            },
+                        );
+                    }
+                    if (locationCustomValues.length > 0) {
+                        locationCustomValues.forEach((cv) => {
+                            if (cv.fieldKey && cv.value) {
+                                body = replaceRaw(body, cv.fieldKey, cv.value);
+                            }
+                        });
+                    }
+                }
+
+                additionalTextInput.value = body.replace(/{{(.*?)}}/g, "");
+                debouncedUpdatePreview();
+            });
+            // END MODIFICATION
             notesTextInput.addEventListener("input", debouncedUpdatePreview);
             additionalTextInput.addEventListener(
                 "input",
                 debouncedUpdatePreview,
             );
-            // START MODIFICATION
-            prewrittenEmailTemplateSelect.addEventListener(
-                "change",
-                debouncedUpdatePreview,
-            );
-            // END MODIFICATION
             sendForm.addEventListener("submit", handleFormSubmit);
 
             initializeApp();
