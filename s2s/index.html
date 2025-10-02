@@ -499,10 +499,8 @@
                                         <!-- END MODIFICATION -->
 
                                         <div class="form-group">
-                                            <label for="additional-text"
-                                                >Additional Text</label
-                                            >
                                             <textarea
+                                                style="height: 145px"
                                                 id="additional-text"
                                                 name="additional_text"
                                                 class="form-textarea"
@@ -559,7 +557,10 @@
                                                 class="form-textarea"
                                                 placeholder="Internal notes for the administrator..."
                                                 style="height: 120px"
-                                            ></textarea>
+                                            >
+Hello,
+Please forward the message below to Senior families. You can either copy the text below or open a pre-written email by clicking on the button below. Let me know if you have any questions. Thank you!</textarea
+                                            >
                                         </div>
                                     </div>
                                 </div>
@@ -854,9 +855,16 @@
 
                 const snapshot = await campaignsRef.get();
                 snapshot.forEach((doc) => {
+                    // FIX: The original data might have 'name' but not 'schoolName'.
+                    // To ensure the new mapping works, let's create schoolName if it doesn't exist.
+                    const campaignData = doc.data();
+                    if (!campaignData.schoolName) {
+                        campaignData.schoolName = campaignData.name;
+                    }
+
                     campaignList.push({
                         id: doc.id,
-                        data: doc.data(),
+                        data: campaignData,
                     });
                     returnVar += `<option value="${doc.id}">${
                         doc.data().name
@@ -885,7 +893,7 @@
 
                     if (!fixedEmailTemplate) {
                         console.error(
-                            'FATAL: The "Send to School" email template (ID: 68768ec371c3e4dd9ca4f492) was not found.',
+                            'FATAL: The "Send to School" email template was not found.',
                         );
                         // Optionally, disable the form or show a permanent error message
                     } else {
@@ -997,6 +1005,27 @@
                     const selectedTemplate = fixedEmailTemplate;
                     // END MODIFICATION
 
+                    // --- START FIX 1: MAILTO LINK GENERATION ---
+                    // REASON: Generate the mailto link dynamically based on current form values.
+                    // This ensures the link is always up-to-date with the latest content.
+                    const campaignName =
+                        campaignSelect.options[campaignSelect.selectedIndex]
+                            .text;
+                    const textTemplateName =
+                        textTemplateSelect.options[
+                            textTemplateSelect.selectedIndex
+                        ].text;
+                    const finalSubject = `${campaignName} - ${textTemplateName}`;
+                    const mailtoBody = additionalTextInput.value;
+
+                    const encodedSubject = encodeURIComponent(finalSubject);
+                    // Use `replace(/\n/g, "\r\n")` to ensure line breaks are preserved correctly across email clients.
+                    const encodedBody = encodeURIComponent(
+                        mailtoBody.replace(/\n/g, "\r\n"),
+                    );
+                    const mailtoLink = `mailto:?subject=${encodedSubject}&body=${encodedBody}`;
+                    // --- END FIX 1 ---
+
                     const templateHtmlResponse = await fetch(
                         selectedTemplate.previewUrl,
                     ).then((res) => res.text());
@@ -1013,7 +1042,7 @@
                             ),
                             "g",
                         );
-                        return text.replace(regex, value || "");
+                        return text.replace(regex, value ?? "");
                     };
                     const replace = (text, key, value) =>
                         replaceRaw(text, `{{contact.${key}}}`, value);
@@ -1023,34 +1052,47 @@
 
                     // --- Process the MAIN template ---
 
-                    // 1. Manual Fields
+                    // --- START FIX 2: SPECIAL FIELDS & LINE BREAKS ---
+                    // REASON: Replace special placeholders with form content. Use .replace(/\n/g, "<br>")
+                    // to preserve line breaks from textareas in the final HTML email.
                     finalHtml = replace(
                         finalHtml,
                         "send_to_school_notes",
-                        notesTextInput.value,
+                        notesTextInput.value.replace(/\n/g, "<br>"),
                     );
                     finalHtml = replace(
                         finalHtml,
                         "send_to_school_message",
-                        additionalTextInput.value,
+                        additionalTextInput.value.replace(/\n/g, "<br>"),
                     );
+                    // This uses the mailtoLink generated in FIX 1.
+                    finalHtml = replaceRaw(
+                        finalHtml,
+                        "{{contact.send_to_school_email_link}}",
+                        mailtoLink,
+                    );
+                    // --- END FIX 2 ---
 
-                    // 2. Campaign Data
+                    // --- START FIX 3: CAMPAIGN FIELD MAPPING ---
+                    // REASON: Corrected the mapping to match the required placeholder-to-property assignments.
+                    // This ensures data from the campaign object is placed in the correct template fields.
                     Object.entries(selectedCampaign).forEach(([key, value]) => {
                         const mapping = {
-                            name: "school_name",
-                            schoolLocation: "school_location",
-                            mascot: "school_mascot",
-                            schoolLogo: "school_logo_link",
                             jostensWebsiteLink: "jostens_website_link",
                             landingPage1: "landing_page_1",
                             landingPage2: "landing_page_2",
+                            mascot: "mascot",
+                            name: "campaign_name",
                             orderDueDate: "order_due_date",
+                            schoolLocation: "school_location",
+                            schoolLogo: "school_logo_link",
+                            schoolName: "school_name", // Correctly mapped from campaign.schoolName
                         };
                         if (mapping[key]) {
                             finalHtml = replace(finalHtml, mapping[key], value);
                         }
                     });
+                    // --- END FIX 3 ---
 
                     // 3. Standard Contact Fields (and the new mailto link)
                     finalHtml = replace(
@@ -1073,12 +1115,7 @@
                         "email",
                         selectedAdminContact.email,
                     );
-                    // START MODIFICATION: Replace mailto link with a placeholder
-                    finalHtml = replaceRaw(
-                        finalHtml,
-                        "{{contact.send_to_school_email_link}}",
-                        "about:blank#placeholder",
-                    );
+                    // START MODIFICATION: The placeholder mailto link replacement is now removed, as it's handled by FIX 1 & 2.
                     // END MODIFICATION
 
                     // 4. Custom Contact Fields
@@ -1109,18 +1146,26 @@
                         );
                     }
 
-                    // 5. Location Custom Values
+                    // --- START FIX 4: CUSTOM VALUE REPLACEMENT ---
+                    // REASON: Replaced the simple string search with a regular expression. This robustly handles
+                    // placeholders with or without whitespace, e.g., `{{custom_values.key}}` and `{{ custom_values.key }}`.
                     if (locationCustomValues.length > 0) {
                         locationCustomValues.forEach((cv) => {
                             if (cv.fieldKey && cv.value) {
-                                finalHtml = replaceRaw(
-                                    finalHtml,
-                                    cv.fieldKey,
-                                    cv.value,
+                                // Get the key name from inside the braces, e.g., "custom_values.jostens_office_email"
+                                const keyWithoutBraces = cv.fieldKey
+                                    .replace(/{{|}}/g, "")
+                                    .trim();
+                                // Create a regex to find this key with optional whitespace
+                                const regex = new RegExp(
+                                    `\\{\\{\\s*${keyWithoutBraces}\\s*\\}\\}`,
+                                    "g",
                                 );
+                                finalHtml = finalHtml.replace(regex, cv.value);
                             }
                         });
                     }
+                    // --- END FIX 4 ---
 
                     // 6. Cleanup remaining placeholders
                     finalHtml = finalHtml.replace(/{{(.*?)}}/g, "");
@@ -1306,6 +1351,25 @@
                     (c) => c.id === campaignId,
                 )?.data;
 
+                // --- START FIX 5: CUSTOM VALUES IN TEXT TEMPLATES ---
+                // REASON: This adds the same robust custom value replacement to the text templates, ensuring
+                // consistency between the text template body and the final email preview.
+                if (locationCustomValues.length > 0) {
+                    locationCustomValues.forEach((cv) => {
+                        if (cv.fieldKey && cv.value) {
+                            const keyWithoutBraces = cv.fieldKey
+                                .replace(/{{|}}/g, "")
+                                .trim();
+                            const regex = new RegExp(
+                                `\\{\\{\\s*${keyWithoutBraces}\\s*\\}\\}`,
+                                "g",
+                            );
+                            body = body.replace(regex, cv.value);
+                        }
+                    });
+                }
+                // --- END FIX 5 ---
+
                 // Apply replacements if possible
                 if (selectedCampaign && selectedAdminContact) {
                     const replaceRaw = (text, placeholder, value) =>
@@ -1322,21 +1386,26 @@
                     const replace = (text, key, value) =>
                         replaceRaw(text, `{{contact.${key}}}`, value);
 
+                    // --- START FIX 6: CAMPAIGN MAPPING IN TEXT TEMPLATES ---
+                    // REASON: Corrected the mapping here as well to ensure text templates are populated
+                    // with the right campaign data before being placed in the "Additional Text" box.
                     Object.entries(selectedCampaign).forEach(([key, value]) => {
                         const mapping = {
-                            name: "school_name",
-                            schoolLocation: "school_location",
-                            mascot: "school_mascot",
-                            schoolLogo: "school_logo_link",
                             jostensWebsiteLink: "jostens_website_link",
                             landingPage1: "landing_page_1",
                             landingPage2: "landing_page_2",
+                            mascot: "mascot",
+                            name: "campaign_name",
                             orderDueDate: "order_due_date",
+                            schoolLocation: "school_location",
+                            schoolLogo: "school_logo_link",
+                            schoolName: "school_name",
                         };
                         if (mapping[key]) {
                             body = replace(body, mapping[key], value);
                         }
                     });
+                    // --- END FIX 6 ---
                     body = replace(
                         body,
                         "first_name",
