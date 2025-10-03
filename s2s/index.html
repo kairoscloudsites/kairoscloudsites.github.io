@@ -483,7 +483,7 @@
                                         <!-- START MODIFICATION: Replaced email template dropdown with text template dropdown -->
                                         <div class="form-group">
                                             <label for="text-template"
-                                                >Select Text Template</label
+                                                >Select Template</label
                                             >
                                             <div class="select-wrapper">
                                                 <select
@@ -504,15 +504,22 @@
                                                 id="additional-text"
                                                 name="additional_text"
                                                 class="form-textarea"
-                                                placeholder="Hello Jane, please send this to all Senior parents."
+                                                placeholder=""
                                             ></textarea>
                                         </div>
 
                                         <div class="form-actions">
                                             <div class="form-group">
-                                                <label for="send-on"
-                                                    >Send on</label
-                                                >
+                                                <span style="display:" flex>
+                                                    <label for="send-on"
+                                                        >Send on</label
+                                                    >
+                                                    <span
+                                                        style="color:grey; font-size: 0.9rem;"
+                                                    >
+                                                        (Optional)
+                                                    </span>
+                                                </span>
                                                 <input
                                                     type="datetime-local"
                                                     id="send-on"
@@ -559,7 +566,8 @@
                                                 style="height: 120px"
                                             >
 Hello,
-Please forward the message below to Senior families. You can either copy the text below or open a pre-written email by clicking on the button below. Let me know if you have any questions. Thank you!</textarea
+Please forward this message to your student families. You can either copy the text below or open a pre-written email by clicking on the button. Let me know if you have any questions.
+Thank you!</textarea
                                             >
                                         </div>
                                     </div>
@@ -718,7 +726,7 @@ Please forward the message below to Senior families. You can either copy the tex
                         subject: emailData.subject,
                         body: emailData.body,
                         to: emailData.to,
-                        cc: emailData.cc || "", // Ensure cc is at least an empty string
+                        cc: emailData.cc || "", // Ensure cc is at least an empty string // jake!
                     };
 
                     await emailsRef.add(payload);
@@ -807,7 +815,7 @@ Please forward the message below to Senior families. You can either copy the tex
                         const contact = await getAdminContact(value);
                         if (contact) {
                             selectedAdminContact = contact;
-                            adminContactContainer.innerHTML = `<span class="checkmark">✓</span> ${contact.firstName} ${contact.lastName}`;
+                            adminContactContainer.innerHTML = `<span class="checkmark">✓</span> ${contact.firstName} ${contact.lastName} (${contact.email})`;
                         } else {
                             adminContactContainer.innerHTML =
                                 "No contact found.";
@@ -955,7 +963,8 @@ Please forward the message below to Senior families. You can either copy the tex
                             "{{ custom_values.jostens_office_email }}",
                     );
                     if (jostensOfficeEmail && jostensOfficeEmail.value) {
-                        ccEmailInput.value = jostensOfficeEmail.value;
+                        // apparently drew doesn't want this :(
+                        // ccEmailInput.value = jostensOfficeEmail.value;
                     }
                 } catch (error) {
                     console.error("Failed to fetch custom values:", error);
@@ -976,7 +985,7 @@ Please forward the message below to Senior families. You can either copy the tex
                     iframe.setAttribute("sandbox", "allow-same-origin");
                     emailPreviewBox.appendChild(iframe);
                     iframe.srcdoc = content;
-                    lastRenderedHtml = content;
+                    // lastRenderedHtml is now managed by the caller to distinguish between preview and sendable HTML
                 };
 
                 // START MODIFICATION: Update condition for showing preview
@@ -989,6 +998,7 @@ Please forward the message below to Senior families. You can either copy the tex
                     const placeholder =
                         '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select an administrator, campaign, and text template to see a preview.</p></body>';
                     renderInIframe(placeholder);
+                    lastRenderedHtml = ""; // Clear sendable HTML state
                     return;
                 }
                 // END MODIFICATION
@@ -996,6 +1006,7 @@ Please forward the message below to Senior families. You can either copy the tex
                 renderInIframe(
                     '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Loading...</p></body>',
                 );
+                lastRenderedHtml = ""; // Clear sendable HTML state
 
                 try {
                     const selectedCampaign = campaignList.find(
@@ -1023,7 +1034,7 @@ Please forward the message below to Senior families. You can either copy the tex
                     const encodedBody = encodeURIComponent(
                         mailtoBody.replace(/\n/g, "\r\n"),
                     );
-                    const mailtoLink = `mailto:?subject=${encodedSubject}&body=${encodedBody}`;
+                    const mailtoLink = `mailto:?body=${encodedBody}`;
                     // --- END FIX 1 ---
 
                     const templateHtmlResponse = await fetch(
@@ -1170,11 +1181,21 @@ Please forward the message below to Senior families. You can either copy the tex
                     // 6. Cleanup remaining placeholders
                     finalHtml = finalHtml.replace(/{{(.*?)}}/g, "");
 
-                    renderInIframe(finalHtml);
+                    // The finalHtml is what we want to SEND. Store it.
+                    lastRenderedHtml = finalHtml;
+
+                    // For the PREVIEW, modify the mailto link to open in the parent frame.
+                    const previewHtml = finalHtml.replace(
+                        `href="${mailtoLink}"`,
+                        `href="${mailtoLink}" target="_parent"`,
+                    );
+
+                    renderInIframe(previewHtml);
                 } catch (error) {
                     console.error("Error updating preview:", error);
                     const errorHtml = `<p style="padding: 1rem; color: red;">Could not load preview. ${error.message}</p>`;
                     renderInIframe(errorHtml);
+                    lastRenderedHtml = ""; // Clear sendable HTML state on error
                 }
             }
 
