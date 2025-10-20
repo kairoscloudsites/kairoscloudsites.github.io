@@ -855,15 +855,15 @@ Thank you!</textarea
 
             async function getCampaignList() {
                 let returnVar = `<option value="" disabled selected>Select a campaign</option>`;
-                const campaignsRef = firestore
+                // sort them alphabetically by field 'name'
+
+                let campaignsRef = firestore
                     .collection("campaigns_restructured")
                     .doc(locationID)
-                    .collection("campaigns");
-
+                    .collection("campaigns")
+                    .orderBy("name", "asc");
                 const snapshot = await campaignsRef.get();
                 snapshot.forEach((doc) => {
-                    // FIX: The original data might have 'name' but not 'schoolName'.
-                    // To ensure the new mapping works, let's create schoolName if it doesn't exist.
                     const campaignData = doc.data();
                     if (!campaignData.schoolName) {
                         campaignData.schoolName = campaignData.name;
@@ -877,6 +877,7 @@ Thank you!</textarea
                         doc.data().name
                     }</option>`;
                 });
+
                 console.log("Campaign list loaded:", campaignList);
                 return returnVar;
             }
