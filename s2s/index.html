@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en">
     <!-- START OF FILE index.html -->
-
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
     <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
@@ -62,7 +61,7 @@
                                 display: flex;
                                 justify-content: center;
                                 box-sizing: border-box;
-                                overflow-y: hidden;
+                                overflow-y: scroll;
                             }
 
                             .container {
@@ -110,8 +109,8 @@
                             flex container, aligning the "Additional Text" box with the "Notes"
                             box in the adjacent column.
                             */
-                            .send-form .form-group:nth-of-type(4) {
-                                margin-bottom: auto;
+                            .send-form .form-group {
+                                margin-bottom: -4px;
                             }
 
                             .form-group {
@@ -226,7 +225,7 @@
                             #email-preview-box {
                                 background-color: var(--input-bg);
                                 border-radius: var(--border-radius);
-                                height: 369px;
+                                height: 327px;
                                 overflow-y: auto;
                                 padding: 1rem;
                                 box-sizing: border-box;
@@ -562,7 +561,7 @@
                                                 name="notes_text"
                                                 class="form-textarea"
                                                 placeholder="Internal notes for the administrator..."
-                                                style="height: 120px"
+                                                style="height: 146px"
                                             >
 Hello,
 Please forward this message to your student families. You can either copy the text below or open a pre-written email by clicking on the button. Let me know if you have any questions.
