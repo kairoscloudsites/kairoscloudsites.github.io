@@ -724,7 +724,7 @@ Thank you!</textarea
                         subject: emailData.subject,
                         body: emailData.body,
                         to: emailData.to,
-                        cc: emailData.cc || "", // Ensure cc is at least an empty string // jake!
+                        cc: emailData.cc || "", // Ensure cc is at least an empty string
                     };
 
                     await emailsRef.add(payload);
@@ -1231,11 +1231,17 @@ Thank you!</textarea
                 // "Send On" date is now optional, so its validation is removed.
                 // END MODIFICATION
 
-                if (
-                    ccEmailInput.value &&
-                    !emailRegex.test(ccEmailInput.value)
-                ) {
-                    errors.push("The CC email address is not a valid format.");
+                // MODIFICATION: Validate multiple CC email addresses
+                if (ccEmailInput.value) {
+                    const ccEmails = ccEmailInput.value
+                        .split(",")
+                        .map((email) => email.trim())
+                        .filter((email) => email);
+                    for (const email of ccEmails) {
+                        if (!emailRegex.test(email)) {
+                            errors.push(`Invalid CC email address: ${email}`);
+                        }
+                    }
                 }
 
                 if (errors.length > 0) {
@@ -1289,6 +1295,15 @@ Thank you!</textarea
                         : new Date(); // Use current time if field is empty
                     // END MODIFICATION
 
+                    // MODIFICATION: Parse multiple CC emails
+                    let ccEmailsArray = [];
+                    if (ccEmailInput.value) {
+                        ccEmailsArray = ccEmailInput.value
+                            .split(",")
+                            .map((email) => email.trim())
+                            .filter((email) => email);
+                    }
+
                     const payload = {
                         type: "Email",
                         contactId: selectedAdminContact.id,
@@ -1299,15 +1314,16 @@ Thank you!</textarea
                         scheduledTimestamp: Math.floor(date.getTime() / 1000),
                     };
 
-                    if (ccEmailInput.value) {
-                        payload.emailCc = [ccEmailInput.value];
+                    // MODIFICATION: Assign the array of CC emails to payload.emailCc
+                    if (ccEmailsArray.length > 0) {
+                        payload.emailCc = ccEmailsArray;
                     }
 
                     // MODIFICATION: Call the Firestore save function *before* updating UI
                     await saveScheduledEmailToFirestore({
                         subject: finalSubject, // Use new subject format
                         to: selectedAdminContact.email,
-                        cc: ccEmailInput.value,
+                        cc: ccEmailInput.value, // Keep this as the raw string for Firestore
                         body: finalEmailBody,
                         date: date,
                     });
