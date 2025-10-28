@@ -795,6 +795,136 @@ Thank you!</textarea
                 }
             }
 
+            // --- NEW: Function to populate additionalTextInput and trigger preview ---
+            async function populateAdditionalTextAndPreview() {
+                const campaignId = campaignSelect.value;
+                const textTemplateId = textTemplateSelect.value;
+
+                if (!textTemplateId) {
+                    additionalTextInput.value = "";
+                    debouncedUpdatePreview();
+                    return;
+                }
+
+                const selectedTemplate = textTemplates.find(
+                    (t) => t.id === textTemplateId,
+                );
+                let body = selectedTemplate.template.body;
+
+                const selectedCampaign = campaignList.find(
+                    (c) => c.id === campaignId,
+                )?.data;
+
+                // --- START FIX 5: CUSTOM VALUES IN TEXT TEMPLATES ---
+                // REASON: This adds the same robust custom value replacement to the text templates, ensuring
+                // consistency between the text template body and the final email preview.
+                if (locationCustomValues.length > 0) {
+                    locationCustomValues.forEach((cv) => {
+                        if (cv.fieldKey && cv.value) {
+                            const keyWithoutBraces = cv.fieldKey
+                                .replace(/{{|}}/g, "")
+                                .trim();
+                            const regex = new RegExp(
+                                `\\{\\{\\s*${keyWithoutBraces}\\s*\\}\\}`,
+                                "g",
+                            );
+                            body = body.replace(regex, cv.value);
+                        }
+                    });
+                }
+                // --- END FIX 5 ---
+
+                // Apply replacements if possible
+                if (selectedCampaign) {
+                    const replaceRaw = (text, placeholder, value) =>
+                        text.replace(
+                            new RegExp(
+                                placeholder.replace(
+                                    /[-\/\\^$*+?.()|[\]{}]/g,
+                                    "\\$&",
+                                ),
+                                "g",
+                            ),
+                            value || "",
+                        );
+                    const replace = (text, key, value) =>
+                        replaceRaw(text, `{{contact.${key}}}`, value);
+
+                    // --- START FIX 6: CAMPAIGN MAPPING IN TEXT TEMPLATES ---
+                    // REASON: Corrected the mapping here as well to ensure text templates are populated
+                    // with the right campaign data before being placed in the "Additional Text" box.
+                    Object.entries(selectedCampaign).forEach(([key, value]) => {
+                        const mapping = {
+                            jostensWebsiteLink: "jostens_website_link",
+                            landingPage1: "landing_page_1",
+                            landingPage2: "landing_page_2",
+                            mascot: "mascot",
+                            name: "campaign_name",
+                            orderDueDate: "order_due_date",
+                            schoolLocation: "school_location",
+                            schoolLogo: "school_logo_link",
+                            schoolName: "school_name",
+                        };
+                        if (mapping[key]) {
+                            // Apply formatDate specifically to orderDueDate
+                            const processedValue =
+                                key === "orderDueDate" && value
+                                    ? formatDate(value)
+                                    : value;
+                            body = replace(body, mapping[key], processedValue);
+                        }
+                    });
+                    // --- END FIX 6 ---
+
+                    // Apply contact fields if admin contact is selected
+                    if (selectedAdminContact) {
+                        body = replace(
+                            body,
+                            "first_name",
+                            selectedAdminContact.firstName,
+                        );
+                        body = replace(
+                            body,
+                            "last_name",
+                            selectedAdminContact.lastName,
+                        );
+                        body = replace(body, "name", selectedAdminContact.name);
+                        body = replace(
+                            body,
+                            "email",
+                            selectedAdminContact.email,
+                        );
+
+                        if (
+                            Array.isArray(selectedAdminContact.customField) &&
+                            locationCustomFields.length > 0
+                        ) {
+                            const customFieldKeyMap =
+                                locationCustomFields.reduce((acc, field) => {
+                                    acc[field.id] = field.fieldKey;
+                                    return acc;
+                                }, {});
+                            selectedAdminContact.customField.forEach(
+                                (contactField) => {
+                                    const fieldKey =
+                                        customFieldKeyMap[contactField.id];
+                                    if (fieldKey && contactField.value) {
+                                        body = replaceRaw(
+                                            body,
+                                            `{{${fieldKey}}}`,
+                                            contactField.value,
+                                        );
+                                    }
+                                },
+                            );
+                        }
+                    }
+                }
+
+                additionalTextInput.value = body.replace(/{{(.*?)}}/g, "");
+                debouncedUpdatePreview();
+            }
+
             adminEmailInput.addEventListener("input", (e) => {
                 clearTimeout(adminSearchTimeout);
                 selectedAdminContact = null;
@@ -803,7 +933,8 @@ Thank you!</textarea
                 if (value.length < 3) {
                     adminContactContainer.innerHTML =
                         "Contact name will appear here";
-                    debouncedUpdatePreview();
+                    // After clearing admin contact, update the text template and preview
+                    populateAdditionalTextAndPreview();
                     return;
                 }
                 adminContactContainer.innerHTML =
@@ -823,7 +954,8 @@ Thank you!</textarea
                         adminContactContainer.innerHTML =
                             "Contact name will appear here";
                     }
-                    debouncedUpdatePreview();
+                    // After updating admin contact, update the text template and preview
+                    populateAdditionalTextAndPreview();
                 }, 500);
             });
 
@@ -988,14 +1120,11 @@ Thank you!</textarea
                 };
 
                 // START MODIFICATION: Update condition for showing preview
-                if (
-                    !selectedAdminContact ||
-                    !campaignId ||
-                    !fixedEmailTemplate ||
-                    !textTemplateId
-                ) {
+                // Email template should only render if both campaign and template are selected.
+                // Admin email should not be required for previewing the template.
+                if (!campaignId || !fixedEmailTemplate || !textTemplateId) {
                     const placeholder =
-                        '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select an administrator, campaign, and text template to see a preview.</p></body>';
+                        '<body style="background-color: #f0f2f5;"><p style="padding: 1rem; text-align:center; color: #6c757d; font-family: Arial, sans-serif;">Please select a campaign and text template to see a preview.</p></body>';
                     renderInIframe(placeholder);
                     lastRenderedHtml = ""; // Clear sendable HTML state
                     return;
@@ -1114,56 +1243,57 @@ Thank you!</textarea
                     // --- END FIX 3 ---
 
                     // 3. Standard Contact Fields (and the new mailto link)
-                    finalHtml = replace(
-                        finalHtml,
-                        "first_name",
-                        selectedAdminContact.firstName,
-                    );
-                    finalHtml = replace(
-                        finalHtml,
-                        "last_name",
-                        selectedAdminContact.lastName,
-                    );
-                    finalHtml = replace(
-                        finalHtml,
-                        "name",
-                        selectedAdminContact.name,
-                    );
-                    finalHtml = replace(
-                        finalHtml,
-                        "email",
-                        selectedAdminContact.email,
-                    );
+                    // Only replace contact fields if an admin contact is selected
+                    if (selectedAdminContact) {
+                        finalHtml = replace(
+                            finalHtml,
+                            "first_name",
+                            selectedAdminContact.firstName,
+                        );
+                        finalHtml = replace(
+                            finalHtml,
+                            "last_name",
+                            selectedAdminContact.lastName,
+                        );
+                        finalHtml = replace(
+                            finalHtml,
+                            "name",
+                            selectedAdminContact.name,
+                        );
+                        finalHtml = replace(
+                            finalHtml,
+                            "email",
+                            selectedAdminContact.email,
+                        );
+
+                        // 4. Custom Contact Fields
+                        if (
+                            Array.isArray(selectedAdminContact.customField) &&
+                            locationCustomFields.length > 0
+                        ) {
+                            const customFieldKeyMap =
+                                locationCustomFields.reduce((acc, field) => {
+                                    acc[field.id] = field.fieldKey;
+                                    return acc;
+                                }, {});
+
+                            selectedAdminContact.customField.forEach(
+                                (contactField) => {
+                                    const fieldKey =
+                                        customFieldKeyMap[contactField.id];
+                                    if (fieldKey && contactField.value) {
+                                        finalHtml = replaceRaw(
+                                            finalHtml,
+                                            `{{${fieldKey}}}`,
+                                            contactField.value,
+                                        );
+                                    }
+                                },
+                            );
+                        }
+                    }
                     // START MODIFICATION: The placeholder mailto link replacement is now removed, as it's handled by FIX 1 & 2.
                     // END MODIFICATION
-
-                    // 4. Custom Contact Fields
-                    if (
-                        Array.isArray(selectedAdminContact.customField) &&
-                        locationCustomFields.length > 0
-                    ) {
-                        const customFieldKeyMap = locationCustomFields.reduce(
-                            (acc, field) => {
-                                acc[field.id] = field.fieldKey;
-                                return acc;
-                            },
-                            {},
-                        );
-
-                        selectedAdminContact.customField.forEach(
-                            (contactField) => {
-                                const fieldKey =
-                                    customFieldKeyMap[contactField.id];
-                                if (fieldKey && contactField.value) {
-                                    finalHtml = replaceRaw(
-                                        finalHtml,
-                                        `{{${fieldKey}}}`,
-                                        contactField.value,
-                                    );
-                                }
-                            },
-                        );
-                    }
 
                     // --- START FIX 4: CUSTOM VALUE REPLACEMENT ---
                     // REASON: Replaced the simple string search with a regular expression. This robustly handles
@@ -1374,138 +1504,18 @@ Thank you!</textarea
                     fetchCustomValues(),
                 ]);
                 renderScheduledList(); // Now renders with data from Firestore.
-                updatePreview();
+                populateAdditionalTextAndPreview(); // Initial call to setup text area and preview
             }
 
-            campaignSelect.addEventListener("change", debouncedUpdatePreview);
+            campaignSelect.addEventListener(
+                "change",
+                populateAdditionalTextAndPreview,
+            );
             // START MODIFICATION: Remove old listeners, add new one for text templates
-            textTemplateSelect.addEventListener("change", () => {
-                const templateId = textTemplateSelect.value;
-                if (!templateId) {
-                    additionalTextInput.value = "";
-                    debouncedUpdatePreview();
-                    return;
-                }
-
-                const selectedTemplate = textTemplates.find(
-                    (t) => t.id === templateId,
-                );
-                let body = selectedTemplate.template.body;
-                const campaignId = campaignSelect.value;
-                const selectedCampaign = campaignList.find(
-                    (c) => c.id === campaignId,
-                )?.data;
-
-                // --- START FIX 5: CUSTOM VALUES IN TEXT TEMPLATES ---
-                // REASON: This adds the same robust custom value replacement to the text templates, ensuring
-                // consistency between the text template body and the final email preview.
-                if (locationCustomValues.length > 0) {
-                    locationCustomValues.forEach((cv) => {
-                        if (cv.fieldKey && cv.value) {
-                            const keyWithoutBraces = cv.fieldKey
-                                .replace(/{{|}}/g, "")
-                                .trim();
-                            const regex = new RegExp(
-                                `\\{\\{\\s*${keyWithoutBraces}\\s*\\}\\}`,
-                                "g",
-                            );
-                            body = body.replace(regex, cv.value);
-                        }
-                    });
-                }
-                // --- END FIX 5 ---
-
-                // Apply replacements if possible
-                if (selectedCampaign && selectedAdminContact) {
-                    const replaceRaw = (text, placeholder, value) =>
-                        text.replace(
-                            new RegExp(
-                                placeholder.replace(
-                                    /[-\/\\^$*+?.()|[\]{}]/g,
-                                    "\\$&",
-                                ),
-                                "g",
-                            ),
-                            value || "",
-                        );
-                    const replace = (text, key, value) =>
-                        replaceRaw(text, `{{contact.${key}}}`, value);
-
-                    // --- START FIX 6: CAMPAIGN MAPPING IN TEXT TEMPLATES ---
-                    // REASON: Corrected the mapping here as well to ensure text templates are populated
-                    // with the right campaign data before being placed in the "Additional Text" box.
-                    Object.entries(selectedCampaign).forEach(([key, value]) => {
-                        const mapping = {
-                            jostensWebsiteLink: "jostens_website_link",
-                            landingPage1: "landing_page_1",
-                            landingPage2: "landing_page_2",
-                            mascot: "mascot",
-                            name: "campaign_name",
-                            orderDueDate: "order_due_date",
-                            schoolLocation: "school_location",
-                            schoolLogo: "school_logo_link",
-                            schoolName: "school_name",
-                        };
-                        if (mapping[key]) {
-                            // Apply formatDate specifically to orderDueDate
-                            const processedValue =
-                                key === "orderDueDate" && value
-                                    ? formatDate(value)
-                                    : value;
-                            body = replace(body, mapping[key], processedValue);
-                        }
-                    });
-                    // --- END FIX 6 ---
-                    body = replace(
-                        body,
-                        "first_name",
-                        selectedAdminContact.firstName,
-                    );
-                    body = replace(
-                        body,
-                        "last_name",
-                        selectedAdminContact.lastName,
-                    );
-                    body = replace(body, "name", selectedAdminContact.name);
-                    body = replace(body, "email", selectedAdminContact.email);
-
-                    if (
-                        Array.isArray(selectedAdminContact.customField) &&
-                        locationCustomFields.length > 0
-                    ) {
-                        const customFieldKeyMap = locationCustomFields.reduce(
-                            (acc, field) => {
-                                acc[field.id] = field.fieldKey;
-                                return acc;
-                            },
-                            {},
-                        );
-                        selectedAdminContact.customField.forEach(
-                            (contactField) => {
-                                const fieldKey =
-                                    customFieldKeyMap[contactField.id];
-                                if (fieldKey && contactField.value) {
-                                    body = replaceRaw(
-                                        body,
-                                        `{{${fieldKey}}}`,
-                                        contactField.value,
-                                    );
-                                }
-                            },
-                        );
-                    }
-                    if (locationCustomValues.length > 0) {
-                        locationCustomValues.forEach((cv) => {
-                            if (cv.fieldKey && cv.value) {
-                                body = replaceRaw(body, cv.fieldKey, cv.value);
-                            }
-                        });
-                    }
-                }
-
-                additionalTextInput.value = body.replace(/{{(.*?)}}/g, "");
-                debouncedUpdatePreview();
-            });
+            textTemplateSelect.addEventListener(
+                "change",
+                populateAdditionalTextAndPreview,
+            );
             // END MODIFICATION
             notesTextInput.addEventListener("input", debouncedUpdatePreview);
             additionalTextInput.addEventListener(
