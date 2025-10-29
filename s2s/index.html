@@ -1050,8 +1050,9 @@ Thank you!</textarea
             // START MODIFICATION: New function to fetch and populate SMS/Text templates
             async function initializeTextTemplates() {
                 try {
-                    const url = `https://services.leadconnectorhq.com/locations/${locationID}/templates?type=sms`;
+                    const url = `https://services.leadconnectorhq.com/locations/${locationID}/templates?type=sms&limit=500`;
                     const data = await apiFetch(url);
+                    console.log("Fetched text templates:", data);
                     textTemplates = data.templates || [];
 
                     let optionsHtml = `<option value="" disabled selected>Select a text template</option>`;
