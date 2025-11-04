@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>SMS Failure Rate Calculator</title>
+        <style>
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    Helvetica, Arial, sans-serif, "Apple Color Emoji",
+                    "Segoe UI Emoji", "Segoe UI Symbol";
+                padding: 2em;
+                line-height: 1.6;
+                background-color: #f4f7f9;
+                color: #333;
+                display: flex;
+                justify-content: center;
+            }
+            main {
+                max-width: 500px;
+                width: 100%;
+                background: #fff;
+                padding: 2em;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            }
+            h1 {
+                border-bottom: 2px solid #e0e0e0;
+                padding-bottom: 0.5em;
+                margin-top: 0;
+            }
+            #results {
+                margin-top: 1.5em;
+            }
+            #results p {
+                margin: 0.8em 0;
+                display: flex;
+                justify-content: space-between;
+                font-size: 1.1em;
+            }
+            #results span {
+                font-weight: bold;
+                background-color: #eef2f5;
+                padding: 0.2em 0.6em;
+                border-radius: 4px;
+            }
+            #percentage-failed {
+                color: #d9534f;
+                font-size: 1.2em;
+            }
+            #status-container {
+                font-style: italic;
+                color: #555;
+                padding: 0.5em;
+                border: 1px dashed #ccc;
+                border-radius: 4px;
+                margin-top: 1em;
+            }
+            .error {
+                color: #d9534f;
+                font-weight: bold;
+            }
+            .success {
+                color: #5cb85c;
+                font-weight: bold;
+            }
+        </style>
+        <!-- This script is assumed to initialize window.ghlToken as per the requirement -->
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+        <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+    </head>
+    <body>
+        <main>
+            <h1>SMS Failure Rate</h1>
+
+            <div id="results">
+                <p>
+                    <strong>Total Sent:</strong>
+                    <span id="sent-count">...</span>
+                </p>
+                <p>
+                    <strong>Total Failed:</strong>
+                    <span id="failed-count">...</span>
+                </p>
+                <hr />
+                <p>
+                    <strong>Failure Percentage:</strong>
+                    <span id="percentage-failed">...</span>
+                </p>
+            </div>
+
+            <div id="status-container">
+                <strong>Status:</strong>
+                <span id="status">Initializing...</span>
+            </div>
+        </main>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const statusEl = document.getElementById("status");
+                const sentCountEl = document.getElementById("sent-count");
+                const failedCountEl = document.getElementById("failed-count");
+                const percentageFailedEl =
+                    document.getElementById("percentage-failed");
+
+                // 1. Get locationID from the URL query parameter
+                const params = new URLSearchParams(window.location.search);
+                const locationId = params.get("locationID");
+
+                if (!locationId) {
+                    statusEl.textContent =
+                        "Error: locationID query parameter is missing from the URL.";
+                    statusEl.className = "error";
+                    return;
+                }
+
+                statusEl.textContent =
+                    "Location ID found. Waiting for authentication token...";
+
+                /**
+                 * Polls for the existence of window.ghlToken, which is set by an external script.
+                 * @param {function} callback The function to execute once the token is found.
+                 */
+                const waitForToken = (callback) => {
+                    let attempts = 0;
+                    const interval = setInterval(() => {
+                        if (window.ghlToken) {
+                            clearInterval(interval);
+                            callback(window.ghlToken);
+                        } else {
+                            attempts++;
+                            if (attempts > 20) {
+                                // Timeout after 5 seconds
+                                clearInterval(interval);
+                                statusEl.textContent =
+                                    "Error: Authentication token (ghlToken) could not be found.";
+                                statusEl.className = "error";
+                            }
+                        }
+                    }, 250);
+                };
+
+                /**
+                 * Fetches sent and failed message counts, then calculates and displays the results.
+                 * @param {string} token The authentication token.
+                 */
+                const fetchMessageStats = async (token) => {
+                    statusEl.textContent = "Fetching data from the server...";
+
+                    const baseUrl =
+                        "https://backend.leadconnectorhq.com/conversations-reporting/messages";
+                    // Dates are taken directly from the provided HAR file example
+                    const startDate = "2025-10-27T04:00:00.000Z";
+                    const endDate = "2025-11-03T04:59:59.999Z";
+
+                    // Common parameters for both API calls. Limit is set to 1 for efficiency
+                    // since we only need the 'total' count from the response.
+                    const commonParams = new URLSearchParams({
+                        locationId: locationId,
+                        limit: "1",
+                        includeTotalCount: "true",
+                        messageType: "SMS",
+                        startDate: startDate,
+                        endDate: endDate,
+                    });
+
+                    // Headers are reconstructed from the HAR data
+                    const headers = {
+                        Accept: "application/json, text/plain, */*",
+                        channel: "APP",
+                        source: "WEB_USER",
+                        version: "2021-04-15",
+                        "token-id": token,
+                    };
+
+                    try {
+                        // Create specific URL for the 'sent' messages request
+                        const sentParams = new URLSearchParams(commonParams);
+                        sentParams.set("status", "sent");
+                        sentParams.set("direction", "outbound"); // This param was unique to the 'sent' request in the HAR
+                        const sentUrl = `${baseUrl}?${sentParams.toString()}`;
+
+                        // Create specific URL for the 'failed' (unfulfilled) messages request
+                        const failedParams = new URLSearchParams(commonParams);
+                        failedParams.set("status", "unfulfilled");
+                        const failedUrl = `${baseUrl}?${failedParams.toString()}`;
+
+                        // 2. Fetch both endpoints concurrently for better performance
+                        const [sentResponse, failedResponse] =
+                            await Promise.all([
+                                fetch(sentUrl, { headers: headers }),
+                                fetch(failedUrl, { headers: headers }),
+                            ]);
+
+                        if (!sentResponse.ok || !failedResponse.ok) {
+                            throw new Error(
+                                `API request failed. Sent status: ${sentResponse.status}, Failed status: ${failedResponse.status}`,
+                            );
+                        }
+
+                        const sentData = await sentResponse.json();
+                        const failedData = await failedResponse.json();
+
+                        const sentCount = sentData.total;
+                        const failedCount = failedData.total;
+
+                        if (
+                            typeof sentCount === "undefined" ||
+                            typeof failedCount === "undefined"
+                        ) {
+                            throw new Error(
+                                'API response did not include the expected "total" field.',
+                            );
+                        }
+
+                        // 3. Update the UI with the fetched data
+                        sentCountEl.textContent = sentCount.toLocaleString();
+                        failedCountEl.textContent =
+                            failedCount.toLocaleString();
+
+                        // 4. Calculate the failure percentage and display it
+                        let percentageFailed = 0;
+                        if (sentCount > 0) {
+                            percentageFailed = (failedCount / sentCount) * 100;
+                        }
+
+                        percentageFailedEl.textContent = `${percentageFailed.toFixed(2)}%`;
+
+                        statusEl.textContent = "Fetched successfully";
+                        statusEl.className = "success";
+                    } catch (error) {
+                        statusEl.textContent = `Error: ${error.message}`;
+                        statusEl.className = "error";
+                        console.error(
+                            "An error occurred during the fetch operation:",
+                            error,
+                        );
+                    }
+                };
+
+                // Start the process by waiting for the token, then fetching the stats
+                waitForToken(fetchMessageStats);
+            });
+        </script>
+    </body>
+</html>
