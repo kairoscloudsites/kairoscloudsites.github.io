@@ -3,7 +3,17 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Camera OCR</title>
+        <title>Student Card Scanner</title>
+
+        <!-- Firebase Dependencies -->
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+        <!-- Custom Global Firebase Init Script -->
+        <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+
+        <!-- JWT Library for Google Auth -->
+        <script src="https://kjur.github.io/jsrsasign/jsrsasign-all-min.js"></script>
+
         <style>
             * {
                 box-sizing: border-box;
@@ -40,17 +50,19 @@
             #left-panel {
                 position: relative;
                 background-color: #000;
+                border-right: 1px solid #333;
             }
 
             #right-panel {
                 background-color: #1e1e1e;
-                padding: 20px;
+                padding: 30px;
+                overflow-y: auto;
             }
 
             #camera-view {
                 width: 100%;
                 height: 100%;
-                object-fit: cover; /* Cover the entire panel */
+                object-fit: cover;
             }
 
             #capture-btn {
@@ -70,6 +82,7 @@
                     background-color 0.3s ease,
                     transform 0.1s ease;
                 box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+                z-index: 10;
             }
 
             #capture-btn:hover {
@@ -85,23 +98,103 @@
                 cursor: not-allowed;
             }
 
-            #result-text {
-                white-space: pre-wrap;
-                word-wrap: break-word;
+            /* Form Styles */
+            h2 {
+                margin-top: 0;
+                color: #fff;
+                margin-bottom: 20px;
+            }
+
+            .form-group {
+                margin-bottom: 20px;
+            }
+
+            label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 500;
+                color: #aaa;
+                font-size: 14px;
+            }
+
+            input[type="text"],
+            input[type="email"],
+            input[type="tel"] {
+                width: 100%;
+                padding: 12px;
                 background-color: #2a2a2a;
                 border: 1px solid #444;
-                border-radius: 8px;
-                padding: 15px;
-                height: 100%;
-                overflow-y: auto;
-                flex-grow: 1;
+                border-radius: 6px;
+                color: #fff;
                 font-size: 16px;
-                line-height: 1.6;
-                color: #f1f1f1;
+                transition: border-color 0.3s;
+            }
+
+            input:focus {
+                outline: none;
+                border-color: #2196f3;
+            }
+
+            .checkbox-group {
+                display: flex;
+                align-items: center;
+                margin-bottom: 25px;
+                background: #2a2a2a;
+                padding: 10px;
+                border-radius: 6px;
+                border: 1px solid #444;
+            }
+
+            .checkbox-group input {
+                margin-right: 10px;
+                width: 18px;
+                height: 18px;
+            }
+
+            .checkbox-group label {
+                margin-bottom: 0;
+                color: #fff;
+                cursor: pointer;
+            }
+
+            #save-btn {
+                width: 100%;
+                padding: 15px;
+                background-color: #4caf50;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            }
+
+            #save-btn:hover {
+                background-color: #43a047;
+            }
+
+            #save-btn:disabled {
+                background-color: #555;
+                cursor: not-allowed;
+            }
+
+            .status-msg {
+                margin-top: 15px;
+                padding: 10px;
+                border-radius: 4px;
+                text-align: center;
+                display: none;
+            }
+            .status-success {
+                background-color: rgba(76, 175, 80, 0.2);
+                color: #81c784;
+            }
+            .status-error {
+                background-color: rgba(244, 67, 54, 0.2);
+                color: #e57373;
             }
         </style>
-        <!-- We need a library to sign the JWT for service account authentication -->
-        <script src="https://kjur.github.io/jsrsasign/jsrsasign-all-min.js"></script>
     </head>
     <body>
         <div class="container">
@@ -110,9 +203,57 @@
                 <button id="capture-btn">Freeze and Recognize</button>
             </div>
             <div class="panel" id="right-panel">
-                <pre id="result-text">
-Point your camera at some text and click the button.</pre
-                >
+                <h2>Card Details</h2>
+
+                <div class="form-group">
+                    <label for="inp-id">Card Unique ID</label>
+                    <input
+                        type="text"
+                        id="inp-id"
+                        placeholder="ID_..."
+                        autocomplete="off"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label for="inp-name">Student Name</label>
+                    <input
+                        type="text"
+                        id="inp-name"
+                        placeholder="John Doe"
+                        autocomplete="off"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label for="inp-phone">Phone Number</label>
+                    <input
+                        type="tel"
+                        id="inp-phone"
+                        placeholder="555-0123"
+                        autocomplete="off"
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label for="inp-email">Email Address</label>
+                    <input
+                        type="email"
+                        id="inp-email"
+                        placeholder="student@example.com"
+                        autocomplete="off"
+                    />
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="chk-create-contact" checked />
+                    <label for="chk-create-contact"
+                        >Create Contact in GHL</label
+                    >
+                </div>
+
+                <button id="save-btn" disabled>Save to Database</button>
+                <div id="status-display" class="status-msg"></div>
             </div>
         </div>
 
@@ -124,7 +265,16 @@ Point your camera at some text and click the button.</pre
             const video = document.getElementById("camera-view");
             const canvas = document.getElementById("snapshot-canvas");
             const captureBtn = document.getElementById("capture-btn");
-            const resultText = document.getElementById("result-text");
+            const saveBtn = document.getElementById("save-btn");
+            const statusDisplay = document.getElementById("status-display");
+
+            // Input Fields
+            const inpId = document.getElementById("inp-id");
+            const inpName = document.getElementById("inp-name");
+            const inpPhone = document.getElementById("inp-phone");
+            const inpEmail = document.getElementById("inp-email");
+            const chkCreateContact =
+                document.getElementById("chk-create-contact");
 
             // --- Google Cloud Credentials (INSECURE - FOR DEMO ONLY) ---
             const serviceAccountCreds = {
@@ -142,31 +292,33 @@ Point your camera at some text and click the button.</pre
             let accessToken = null;
             let tokenExpiry = null;
 
+            // --- Helper: Get Location ID from URL ---
+            function getLocationID() {
+                const params = new URLSearchParams(window.location.search);
+                return params.get("locationID") || "";
+            }
+
             // --- Camera Initialization ---
             async function initCamera() {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: "environment" }, // Prefer the rear camera
+                        video: { facingMode: "environment" },
                     });
                     video.srcObject = stream;
                 } catch (err) {
                     console.error("Error accessing camera: ", err);
-                    alert(
-                        "Could not access the camera. Please ensure you have a camera and have granted permission.",
-                    );
+                    alert("Could not access the camera.");
                 }
             }
 
-            /**
-             * Generates a short-lived access token for the Vision API using a JWT.
-             */
+            // --- Auth Token Logic (Google Vision) ---
             async function getAccessToken() {
                 if (accessToken && tokenExpiry && new Date() < tokenExpiry) {
                     return accessToken;
                 }
                 const header = { alg: "RS256", typ: "JWT" };
                 const now = Math.floor(Date.now() / 1000);
-                const expiry = now + 3600; // Token is valid for 1 hour
+                const expiry = now + 3600;
                 const claimSet = {
                     iss: serviceAccountCreds.client_email,
                     scope: "https://www.googleapis.com/auth/cloud-vision",
@@ -174,12 +326,10 @@ Point your camera at some text and click the button.</pre
                     exp: expiry,
                     iat: now,
                 };
-                const sHeader = JSON.stringify(header);
-                const sPayload = JSON.stringify(claimSet);
                 const signedJWT = KJUR.jws.JWS.sign(
                     "RS256",
-                    sHeader,
-                    sPayload,
+                    JSON.stringify(header),
+                    JSON.stringify(claimSet),
                     serviceAccountCreds.private_key,
                 );
 
@@ -208,48 +358,132 @@ Point your camera at some text and click the button.</pre
             }
 
             /**
-             * Captures a frame, sends it to the Vision API, and displays the result.
+             * Enhanced OCR Parsing Logic.
+             * Uses Anchor detection to extract text between "Name", "Phone", "Email" labels.
              */
+            function parseCardText(text) {
+                // Normalize lines: remove empty ones, trim
+                const lines = text
+                    .split("\n")
+                    .map((l) => l.trim())
+                    .filter((l) => l.length > 0);
+                const lowerLines = lines.map((l) => l.toLowerCase());
+
+                let result = { id: "", name: "", phone: "", email: "" };
+
+                // 1. EXTRACT ID
+                // Search specifically for "ID_" pattern anywhere in the text.
+                const idRegex = /ID\s*[_\-.:]?\s*([a-zA-Z0-9_]+)/i;
+                const idMatch = text.match(idRegex);
+                if (idMatch && idMatch[1]) {
+                    result.id = idMatch[0].replace(/\s/g, "");
+                }
+
+                // 2. FIND ANCHORS (Line indices for labels)
+                let nameIdx = -1;
+                let phoneIdx = -1;
+                let emailIdx = -1;
+
+                for (let i = 0; i < lowerLines.length; i++) {
+                    const line = lowerLines[i];
+                    if (
+                        nameIdx === -1 &&
+                        (line.startsWith("name") || line === "student name")
+                    )
+                        nameIdx = i;
+                    if (
+                        phoneIdx === -1 &&
+                        (line.startsWith("phone") || line.includes("number"))
+                    )
+                        phoneIdx = i;
+                    if (emailIdx === -1 && line.startsWith("email"))
+                        emailIdx = i;
+                }
+
+                // Helper to extract and clean text between two line indices
+                const getRange = (start, end) => {
+                    if (start === -1) return "";
+                    let extracted = [];
+
+                    // 1. Check same line (e.g., "Name Jacob")
+                    let startLine = lines[start];
+                    let cleanStart = startLine.replace(
+                        /^(name|phone|phone number|number|email)\s*[:.]?\s*/i,
+                        "",
+                    );
+                    cleanStart = cleanStart.replace(/[_]{2,}/g, "").trim();
+                    if (cleanStart.length > 1) extracted.push(cleanStart);
+
+                    // 2. Check lines strictly between start and end
+                    let limit = end === -1 ? lines.length : end;
+                    for (let i = start + 1; i < limit; i++) {
+                        let val = lines[i].replace(/[_]{2,}/g, "").trim();
+                        // Ignore lines that are just underscores or empty
+                        if (val.length > 0 && !/^[_]+$/.test(val)) {
+                            extracted.push(val);
+                        }
+                    }
+                    return extracted.join(" ");
+                };
+
+                // 3. EXTRACT VALUES BETWEEN ANCHORS
+                if (nameIdx !== -1) {
+                    result.name = getRange(nameIdx, phoneIdx);
+                }
+                if (phoneIdx !== -1) {
+                    let rawPhone = getRange(phoneIdx, emailIdx);
+                    result.phone = rawPhone
+                        .replace(/^(number|phone)\s*/i, "")
+                        .trim();
+                }
+                if (emailIdx !== -1) {
+                    result.email = getRange(emailIdx, -1);
+                }
+
+                // 4. FALLBACKS
+                if (!result.id) {
+                    const idLine = lines.find((l) =>
+                        l.toUpperCase().startsWith("ID_"),
+                    );
+                    if (idLine) result.id = idLine;
+                }
+                if (!result.email || !result.email.includes("@")) {
+                    const emailRegexMatch = text.match(
+                        /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i,
+                    );
+                    if (emailRegexMatch) result.email = emailRegexMatch[0];
+                }
+
+                return result;
+            }
+
+            // --- OCR Execution ---
             async function freezeAndRecognize() {
                 captureBtn.disabled = true;
-                captureBtn.textContent = "Recognizing...";
-                resultText.textContent = "Processing image...";
+                saveBtn.disabled = true;
+                captureBtn.textContent = "Processing...";
+                statusDisplay.style.display = "none";
 
-                // 1. Capture frame to canvas
                 const context = canvas.getContext("2d");
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
-
-                // Reverse the previous behavior: draw the image without the horizontal mirror
-                // (the API will now receive the image mirrored from what the original code sent)
-                context.save();
-                context.setTransform(1, 0, 0, 1, 0, 0); // reset any transforms
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                context.restore();
-
-                // 2. Get image data as Base64 (and remove the data URL prefix)
                 const base64ImageData = canvas
                     .toDataURL("image/jpeg")
                     .split(",")[1];
 
                 try {
-                    // 3. Get a valid access token
                     const token = await getAccessToken();
-
-                    // 4. Construct the Vision API request (set language to English)
                     const requestBody = {
                         requests: [
                             {
                                 image: { content: base64ImageData },
                                 features: [{ type: "TEXT_DETECTION" }],
-                                imageContext: {
-                                    languageHints: ["en"],
-                                },
+                                imageContext: { languageHints: ["en"] },
                             },
                         ],
                     };
 
-                    // 5. Call the Vision API
                     const response = await fetch(visionApiEndpoint, {
                         method: "POST",
                         headers: {
@@ -259,36 +493,180 @@ Point your camera at some text and click the button.</pre
                         body: JSON.stringify(requestBody),
                     });
 
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(
-                            `Google Vision API error: ${error.error.message || response.statusText}`,
-                        );
-                    }
-
+                    if (!response.ok) throw new Error("API Request Failed");
                     const data = await response.json();
 
-                    // 6. Display the result
-                    const detection = data.responses[0];
-                    if (detection && detection.fullTextAnnotation) {
-                        resultText.textContent =
-                            detection.fullTextAnnotation.text;
-                    } else {
-                        resultText.textContent = "No text found in the image.";
-                    }
+                    const fullText =
+                        data.responses[0]?.fullTextAnnotation?.text || "";
+                    console.log("Raw OCR Text:", fullText);
+
+                    // Parse data and fill form
+                    const parsed = parseCardText(fullText);
+
+                    inpId.value = parsed.id;
+                    inpName.value = parsed.name;
+                    inpPhone.value = parsed.phone;
+                    inpEmail.value = parsed.email;
+
+                    captureBtn.textContent = "Retake / Scan Again";
+                    saveBtn.disabled = false;
                 } catch (error) {
                     console.error("OCR failed:", error);
-                    resultText.textContent = `Error: ${error.message}`;
-                } finally {
-                    // 7. Re-enable the button
-                    captureBtn.disabled = false;
+                    alert("OCR Failed: " + error.message);
                     captureBtn.textContent = "Freeze and Recognize";
+                } finally {
+                    captureBtn.disabled = false;
+                }
+            }
+
+            // --- GoHighLevel API Integration ---
+            async function createGHLContact(contactData, locationID) {
+                const ghlToken = window.GlobalLocationAccessKey;
+
+                if (!ghlToken) {
+                    throw new Error(
+                        "GHL Authorization Token (GlobalLocationAccessKey) is missing.",
+                    );
+                }
+
+                if (!locationID) {
+                    throw new Error("Location ID is missing.");
+                }
+
+                const endpoint =
+                    "https://services.leadconnectorhq.com/contacts/";
+
+                // Split Name
+                const nameParts = contactData.name.trim().split(/\s+/);
+                const firstName = nameParts[0] || "";
+                const lastName = nameParts.slice(1).join(" ") || "";
+
+                const payload = {
+                    locationId: locationID,
+                    firstName: firstName,
+                    lastName: lastName,
+                    name: contactData.name.trim(), // Full name
+                    email: contactData.email,
+                    phone: contactData.phone,
+                    tags: ["student-card-scan"],
+                    source: "OCR App",
+                };
+
+                console.log("Sending to GHL:", payload);
+
+                const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${ghlToken}`,
+                        Version: "2021-07-28",
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    const errBody = await response.json().catch(() => ({}));
+                    console.error("GHL Error Body:", errBody);
+                    throw new Error(
+                        `GHL API Error: ${response.status} ${response.statusText} - ${JSON.stringify(errBody)}`,
+                    );
+                }
+
+                const result = await response.json();
+
+                if (result.contact && result.contact.id) {
+                    return result.contact.id;
+                } else {
+                    throw new Error("GHL Response did not contain contact ID.");
+                }
+            }
+
+            // --- Save Data Logic ---
+            async function saveData() {
+                saveBtn.disabled = true;
+                saveBtn.textContent = "Saving...";
+                statusDisplay.style.display = "none";
+
+                const id = inpId.value.trim();
+                const name = inpName.value.trim();
+                const phone = inpPhone.value.trim();
+                const email = inpEmail.value.trim();
+                const locationID = getLocationID();
+
+                if (!id) {
+                    alert("Card ID is required!");
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "Save to Database";
+                    return;
+                }
+
+                try {
+                    let contactID = "";
+
+                    // 1. Create Contact in GHL if checked
+                    if (chkCreateContact.checked) {
+                        try {
+                            contactID = await createGHLContact(
+                                { name, phone, email },
+                                locationID,
+                            );
+                        } catch (err) {
+                            console.error("GHL Creation Failed:", err);
+                            const proceed = confirm(
+                                "GoHighLevel Contact Creation failed: " +
+                                    err.message +
+                                    "\n\nDo you want to save to Firebase anyway?",
+                            );
+                            if (!proceed) {
+                                throw new Error(
+                                    "Cancelled by user after GHL failure.",
+                                );
+                            }
+                        }
+                    }
+
+                    // 2. Prepare Firebase Data
+                    const docData = {
+                        name: name,
+                        phone: phone,
+                        email: email,
+                        added: Date.now(),
+                        contactID: contactID,
+                        locationID: locationID,
+                    };
+
+                    // 3. Save to Firestore
+                    await firestore
+                        .collection("cards")
+                        .doc(id)
+                        .set(docData, { merge: true });
+
+                    // Success Feedback
+                    statusDisplay.textContent = "Successfully saved!";
+                    statusDisplay.className = "status-msg status-success";
+                    statusDisplay.style.display = "block";
+
+                    saveBtn.textContent = "Saved";
+                    setTimeout(() => {
+                        saveBtn.textContent = "Save to Database";
+                        saveBtn.disabled = false;
+                    }, 2000);
+                } catch (error) {
+                    console.error("Save Error:", error);
+                    statusDisplay.textContent =
+                        "Error saving: " + error.message;
+                    statusDisplay.className = "status-msg status-error";
+                    statusDisplay.style.display = "block";
+                    saveBtn.textContent = "Save to Database";
+                    saveBtn.disabled = false;
                 }
             }
 
             // --- Event Listeners ---
             window.addEventListener("load", initCamera);
             captureBtn.addEventListener("click", freezeAndRecognize);
+            saveBtn.addEventListener("click", saveData);
         </script>
     </body>
 </html>
