@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Generate Contact Cards | Kairos Cloud</title>
+
+        <!-- Firebase Dependencies -->
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+        <!-- Custom Configuration -->
+        <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap");
+
+            :root {
+                --card-width: 4.25in;
+                --card-height: 3.66667in;
+                --blue: #2d89cd;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: "Roboto", sans-serif;
+                background-color: #f0f0f0;
+            }
+
+            /* Printable Sheet */
+            .sheet {
+                width: 8.5in;
+                height: 11in;
+                background: white;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: 1fr 1fr 1fr;
+                margin: 40px auto; /* Margin for viewing on screen */
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            }
+
+            /* Card Layout */
+            .card {
+                width: var(--card-width);
+                height: var(--card-height);
+                padding: 0.4in;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+            }
+
+            /* Cut Lines (Dashed) */
+            .card:nth-child(2n + 1) {
+                border-right: 1px dashed #ccc;
+            }
+            .card:nth-child(-n + 4) {
+                border-bottom: 1px dashed #ccc;
+            }
+
+            /* Header Area */
+            .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 20px;
+            }
+
+            .logo-section {
+                flex: 1;
+            }
+
+            .logo-img {
+                max-width: 200px;
+                height: auto;
+                margin-bottom: 8px;
+                display: block;
+            }
+
+            .sub-text {
+                font-size: 12px;
+                color: #333;
+                margin-top: 5px;
+            }
+
+            .qr-section {
+                text-align: center;
+                margin-top: -5px;
+            }
+
+            .qr-code {
+                width: 80px;
+                height: 80px;
+            }
+
+            .id-label {
+                font-family: monospace;
+                font-size: 12px;
+                margin-top: 2px;
+                letter-spacing: 1px;
+            }
+
+            /* Form Area */
+            .form-area {
+                flex-grow: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                gap: 25px;
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+
+            .form-line {
+                display: flex;
+                align-items: flex-end;
+                font-size: 16px;
+            }
+
+            .label {
+                /* Fixed width and right align ensures lines start at same spot */
+                width: 60px;
+                text-align: right;
+                margin-right: 15px;
+                font-weight: 400;
+                color: #333;
+                white-space: nowrap;
+            }
+
+            .line {
+                flex-grow: 1;
+                border-bottom: 1px solid #000;
+            }
+
+            /* Action Button */
+            #action-container {
+                position: fixed;
+                bottom: 30px;
+                right: 30px;
+                z-index: 1000;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 10px;
+            }
+
+            #status-text {
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 5px 10px;
+                border-radius: 4px;
+                font-size: 14px;
+                display: none; /* Hidden by default */
+            }
+
+            #action-btn {
+                background-color: var(--blue);
+                color: white;
+                border: none;
+                padding: 15px 30px;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+                border-radius: 9px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+                transition:
+                    transform 0.2s,
+                    background-color 0.2s;
+            }
+
+            #action-btn:hover {
+                transform: translateY(-2px);
+                background-color: #247bbd;
+            }
+
+            #action-btn:disabled {
+                background-color: #999;
+                cursor: wait;
+                transform: none;
+            }
+
+            /* Print Media Query */
+            @media print {
+                @page {
+                    size: A4;
+                    margin: 0;
+                }
+
+                body {
+                    background: white;
+                }
+
+                #action-container {
+                    display: none;
+                }
+
+                .sheet {
+                    margin: 0;
+                    box-shadow: none;
+                    width: 100%;
+                    height: 100%;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="action-container">
+            <span id="status-text">Loading...</span>
+            <button id="action-btn" onclick="handleAction()" disabled>
+                Loading...
+            </button>
+        </div>
+
+        <div class="sheet" id="card-container">
+            <!-- Cards will be injected here -->
+        </div>
+
+        <script>
+            // -- Configuration --
+            const generatedIds = [];
+            let locationName = "Loading...";
+            let hasPrinted = false;
+
+            // -- 1. Initialization --
+            document.addEventListener("DOMContentLoaded", async () => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const locationId = urlParams.get("locationID");
+                const statusEl = document.getElementById("status-text");
+                const btn = document.getElementById("action-btn");
+
+                statusEl.style.display = "block";
+
+                if (!locationId) {
+                    statusEl.textContent = "Error: No locationId in URL.";
+                    btn.textContent = "Error";
+                    return;
+                }
+
+                try {
+                    // Fetch Subaccount Info
+                    locationName = await fetchLocationName(locationId);
+
+                    // Generate Cards
+                    await generateCards();
+
+                    // Enable Print
+                    statusEl.style.display = "none";
+                    btn.textContent = "Print";
+                    btn.disabled = false;
+                } catch (err) {
+                    console.error(err);
+                    statusEl.textContent = "Error: " + err.message;
+                    btn.textContent = "Error";
+                }
+            });
+
+            // -- 2. API Logic --
+            async function fetchLocationName(locationId) {
+                while (!window.GlobalLocationAccessKey) {
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                }
+
+                const token = window.GlobalLocationAccessKey;
+
+                const response = await fetch(
+                    `https://services.leadconnectorhq.com/locations/${locationId}`,
+                    {
+                        method: "GET",
+                        headers: {
+                            Accept: "application/json",
+                            Version: "2021-07-28",
+                            Authorization: `Bearer ${token}`,
+                        },
+                    },
+                );
+
+                if (!response.ok)
+                    throw new Error("Failed to fetch location data");
+
+                const data = await response.json();
+                return data.location
+                    ? data.location.name || data.location.businessName
+                    : "Unknown School";
+            }
+
+            // -- 3. Hashing & Uniqueness Logic --
+            function hash(input) {
+                const outputDomain =
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+                const magic = "jsHashSeed";
+
+                let ac1 = 0;
+                let ac2 = 0;
+
+                let s = String(input) + typeof input + magic;
+
+                for (let i = 0; i < s.length; i++) {
+                    ac1 = (ac1 << 5) - ac1 + s.charCodeAt(i);
+                    ac2 = (ac2 << 5) - ac2 + s.charCodeAt(s.length - 1 - i);
+                    ac1 |= 0;
+                    ac2 |= 0;
+                }
+
+                let result = "";
+                for (let i = 0; i < 8; i++) {
+                    let mixed = ac1 ^ (ac2 + i);
+                    mixed ^= mixed >>> 17;
+                    mixed ^= mixed >>> 8;
+                    const index = Math.abs(mixed) % outputDomain.length;
+                    result += outputDomain[index];
+                    ac1 = ((ac1 << 3) - ac1) ^ ac2;
+                    ac1 |= 0;
+                    ac2 = ((ac2 << 3) - ac2) ^ ac1;
+                    ac2 |= 0;
+                }
+                return result;
+            }
+
+            async function getUniqueId() {
+                let isUnique = false;
+                let id = "";
+
+                while (!isUnique) {
+                    id = hash(Math.random());
+                    try {
+                        const doc = await firestore
+                            .collection("cards")
+                            .doc(id)
+                            .get();
+                        if (!doc.exists) {
+                            isUnique = true;
+                        }
+                    } catch (e) {
+                        console.error("Firestore Error checking ID:", e);
+                        throw e;
+                    }
+                }
+                return id;
+            }
+
+            // -- 4. DOM Generation --
+            async function generateCards() {
+                const container = document.getElementById("card-container");
+                container.innerHTML = "";
+
+                for (let i = 0; i < 6; i++) {
+                    const uniqueID = await getUniqueId();
+                    generatedIds.push(uniqueID);
+
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=https://sites.kairoscloud.io/f/${uniqueID}`;
+
+                    const cardHtml = `
+                    <div class="card">
+                        <div class="header">
+                            <div class="logo-section">
+                                <img src="https://kairoscloud.github.io/main/Assets/lax0ZXTk.png" class="logo-img" alt="Kairos Cloud">
+                                <div class="sub-text">${locationName} | School Contact Form</div>
+                            </div>
+                            <div class="qr-section">
+                                <img src="${qrUrl}" class="qr-code" alt="QR">
+                                <div class="id-label">ID_${uniqueID}</div>
+                            </div>
+                        </div>
+                        <div class="form-area">
+                            <div class="form-line">
+                                <span class="label">Name</span>
+                                <div class="line"></div>
+                            </div>
+                            <div class="form-line">
+                                <span class="label">Phone</span>
+                                <div class="line"></div>
+                            </div>
+                            <div class="form-line">
+                                <span class="label">Email</span>
+                                <div class="line"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                    container.insertAdjacentHTML("beforeend", cardHtml);
+                }
+            }
+
+            // -- 5. Printing & Saving --
+            function handleAction() {
+                if (hasPrinted) {
+                    // If already printed, refresh the page to start over
+                    window.location.reload();
+                } else {
+                    // Trigger print
+                    window.print();
+                }
+            }
+
+            // Listen for afterprint event to save to Firebase
+            window.addEventListener("afterprint", async (event) => {
+                const statusEl = document.getElementById("status-text");
+                const btn = document.getElementById("action-btn");
+
+                statusEl.style.display = "block";
+                statusEl.textContent = "Saving records...";
+                btn.disabled = true;
+
+                try {
+                    const batch = firestore.batch();
+                    const locationParam = new URLSearchParams(
+                        window.location.search,
+                    ).get("locationID");
+
+                    generatedIds.forEach((id) => {
+                        const docRef = firestore.collection("cards").doc(id);
+                        // Only setting locationID as requested
+                        batch.set(docRef, {
+                            locationID: locationParam,
+                        });
+                    });
+
+                    await batch.commit();
+
+                    // Update UI state
+                    statusEl.textContent = "Saved successfully!";
+                    setTimeout(() => {
+                        statusEl.style.display = "none";
+                    }, 3000);
+
+                    hasPrinted = true;
+                    btn.textContent = "Print More";
+                    btn.disabled = false;
+                } catch (error) {
+                    console.error("Error saving to firestore:", error);
+                    statusEl.textContent = "Error saving records.";
+                    // Re-enable button to try again or refresh manualy
+                    btn.disabled = false;
+                }
+            });
+        </script>
+    </body>
+</html>
