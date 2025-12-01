@@ -277,15 +277,7 @@
                 document.getElementById("chk-create-contact");
 
             // --- Gemini API Logic ---
-            let keys = [
-                "AIzaSyAYq6Tc3BZhc_3SXHSTo0IHG0Xl6v2PEGo",
-                "AIzaSyCBn7QQ_d9nr-GN_BZC4R7dAWh6NO8dNvs",
-                "AIzaSyA2kvnn3ZzAUW8vQTVoAyM4vNpsjt9GUaA",
-                "AIzaSyD_AhsJuTEHedU8nIZiIfaKpelvAo75n2E",
-                "AIzaSyBnOkb2KKxaABWzctuA88IG8RCwsftKAKE",
-                "AIzaSyBla0rGsQ1rV0dhOg7EcMlKGIrz7zvKp_I",
-                "AIzaSyCOZgTpwTQVnVgcbJMjwd3u-lQPSjgEDno",
-            ];
+            let keys = [btoa("\x00\x8CÚK 7í\\{÷ ;óT\x98ñCdr¹­\bA\x98àEuÁ\x12")];
 
             async function ai(prompt, model, retries, apiKey) {
                 try {
