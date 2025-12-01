@@ -1,13 +1,46 @@
+<!--
+OCR Contact Card Minter
+This is a static HTML/CSS/JS page that generates printable sheets of contact info cards.
+Students write on these cards, and they are scanned to auto-fill their info digitally.
+
+Layout:
+- Card Dimensions: 4.25 x 3.66667 inches.
+- Sheet: Prints 6 cards (2x3) on a standard A4 8.5 x 11 inch page.
+- Pagination: If more than 6 cards are requested, multiple sheets are generated with page breaks.
+
+Dynamic Data:
+- Subaccount Name: Fetched via GHL API using "locationID" URL parameter and window.globalLocationAccessKey.
+- Unique ID: A random base62 string of length 8. Uniqueness is statistically assumed (no database check).
+- QR Code: Generated client-side using qrcodejs. Links to sites.kairoscloud.io/f/<uniqueID>.
+
+Workflow:
+1. Page loads, fetches location name.
+2. Generates the default number of cards (6).
+3. User can adjust the number of cards.
+4. "Print" button triggers window.print().
+5. After printing, the "afterprint" event saves all generated IDs to Firestore collection "cards" with the locationID.
+
+Dependencies:
+- Firebase (App, Firestore)
+- globalFirebase.js (Config)
+- qrcodejs (QR Generation)
+-->
 <!doctype html>
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Generate Contact Cards | Kairos Cloud</title>
-
+        <link
+            rel="icon"
+            type="image/png"
+            href="http://kairoscloud.github.io/main/Assets/favicon.png"
+        />
         <!-- Firebase Dependencies -->
         <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
         <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+        <!-- QR Code Library -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <!-- Custom Configuration -->
         <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
 
@@ -31,6 +64,15 @@
                 background-color: #f0f0f0;
             }
 
+            /* Main Container for multiple sheets */
+            #sheets-wrapper {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 40px;
+                padding: 40px 0;
+            }
+
             /* Printable Sheet */
             .sheet {
                 width: 8.5in;
@@ -39,8 +81,9 @@
                 display: grid;
                 grid-template-columns: 1fr 1fr;
                 grid-template-rows: 1fr 1fr 1fr;
-                margin: 40px auto; /* Margin for viewing on screen */
                 box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                page-break-after: always; /* Ensure new page while printing */
+                break-after: page;
             }
 
             /* Card Layout */
@@ -57,6 +100,7 @@
             .card:nth-child(2n + 1) {
                 border-right: 1px dashed #ccc;
             }
+            /* Add border bottom to the first 4 cards (top 2 rows) */
             .card:nth-child(-n + 4) {
                 border-bottom: 1px dashed #ccc;
             }
@@ -89,11 +133,19 @@
             .qr-section {
                 text-align: center;
                 margin-top: -5px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
             }
 
-            .qr-code {
+            /* QR Container for JS generation */
+            .qr-code-container {
                 width: 80px;
                 height: 80px;
+            }
+
+            .qr-code-container img {
+                display: block; /* Remove inline spacing */
             }
 
             .id-label {
@@ -135,7 +187,7 @@
                 border-bottom: 1px solid #000;
             }
 
-            /* Action Button */
+            /* Action Button & Input */
             #action-container {
                 position: fixed;
                 bottom: 30px;
@@ -145,6 +197,33 @@
                 flex-direction: column;
                 align-items: flex-end;
                 gap: 10px;
+                background: rgba(255, 255, 255, 0.9);
+                padding: 15px;
+                border-radius: 12px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            }
+
+            .input-group {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 5px;
+                margin-bottom: 5px;
+            }
+
+            .input-group label {
+                font-size: 12px;
+                color: #555;
+                font-weight: bold;
+            }
+
+            #card-count {
+                padding: 8px;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                width: 80px;
+                font-size: 16px;
+                text-align: right;
             }
 
             #status-text {
@@ -169,6 +248,7 @@
                 transition:
                     transform 0.2s,
                     background-color 0.2s;
+                width: 100%;
             }
 
             #action-btn:hover {
@@ -197,11 +277,27 @@
                     display: none;
                 }
 
+                #sheets-wrapper {
+                    margin: 0;
+                    padding: 0;
+                    gap: 0;
+                    display: block; /* Restore block for paging */
+                }
+
                 .sheet {
                     margin: 0;
                     box-shadow: none;
                     width: 100%;
                     height: 100%;
+                    /* Ensure every sheet forces a new page,
+                       except potentially the last one handled by browser */
+                    page-break-after: always;
+                    break-after: page;
+                }
+
+                .sheet:last-child {
+                    page-break-after: auto;
+                    break-after: auto;
                 }
             }
         </style>
@@ -209,18 +305,30 @@
     <body>
         <div id="action-container">
             <span id="status-text">Loading...</span>
+
+            <div class="input-group">
+                <label for="card-count">Total Cards</label>
+                <input
+                    type="number"
+                    id="card-count"
+                    value="6"
+                    min="1"
+                    step="1"
+                />
+            </div>
+
             <button id="action-btn" onclick="handleAction()" disabled>
                 Loading...
             </button>
         </div>
 
-        <div class="sheet" id="card-container">
-            <!-- Cards will be injected here -->
+        <div id="sheets-wrapper">
+            <!-- Sheets will be injected here -->
         </div>
 
         <script>
             // -- Configuration --
-            const generatedIds = [];
+            let generatedIds = [];
             let locationName = "Loading...";
             let hasPrinted = false;
 
@@ -230,6 +338,7 @@
                 const locationId = urlParams.get("locationID");
                 const statusEl = document.getElementById("status-text");
                 const btn = document.getElementById("action-btn");
+                const countInput = document.getElementById("card-count");
 
                 statusEl.style.display = "block";
 
@@ -243,13 +352,25 @@
                     // Fetch Subaccount Info
                     locationName = await fetchLocationName(locationId);
 
-                    // Generate Cards
-                    await generateCards();
+                    // Generate Cards (Initial batch of 6)
+                    await generateCards(parseInt(countInput.value) || 6);
 
                     // Enable Print
                     statusEl.style.display = "none";
                     btn.textContent = "Print";
                     btn.disabled = false;
+
+                    // Add listener to regenerate when number changes
+                    countInput.addEventListener("change", async (e) => {
+                        const val = parseInt(e.target.value);
+                        if (val > 0) {
+                            btn.disabled = true;
+                            btn.textContent = "Generating...";
+                            await generateCards(val);
+                            btn.textContent = "Print";
+                            btn.disabled = false;
+                        }
+                    });
                 } catch (err) {
                     console.error(err);
                     statusEl.textContent = "Error: " + err.message;
@@ -319,48 +440,42 @@
                 return result;
             }
 
-            async function getUniqueId() {
-                let isUnique = false;
-                let id = "";
-
-                while (!isUnique) {
-                    id = hash(Math.random());
-                    try {
-                        const doc = await firestore
-                            .collection("cards")
-                            .doc(id)
-                            .get();
-                        if (!doc.exists) {
-                            isUnique = true;
-                        }
-                    } catch (e) {
-                        console.error("Firestore Error checking ID:", e);
-                        throw e;
-                    }
-                }
-                return id;
+            function getUniqueId() {
+                // Modified: removed Firestore check for speed on large batches
+                return hash(Math.random() + new Date().getTime());
             }
 
             // -- 4. DOM Generation --
-            async function generateCards() {
-                const container = document.getElementById("card-container");
-                container.innerHTML = "";
+            async function generateCards(count) {
+                const wrapper = document.getElementById("sheets-wrapper");
+                wrapper.innerHTML = "";
+                generatedIds = []; // Reset list
 
-                for (let i = 0; i < 6; i++) {
-                    const uniqueID = await getUniqueId();
+                let currentSheet = null;
+
+                for (let i = 0; i < count; i++) {
+                    // Create a new sheet every 6 cards
+                    if (i % 6 === 0) {
+                        currentSheet = document.createElement("div");
+                        currentSheet.className = "sheet";
+                        wrapper.appendChild(currentSheet);
+                    }
+
+                    const uniqueID = getUniqueId();
                     generatedIds.push(uniqueID);
 
-                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=https://sites.kairoscloud.io/f/${uniqueID}`;
+                    // Card container
+                    const cardDiv = document.createElement("div");
+                    cardDiv.className = "card";
 
-                    const cardHtml = `
-                    <div class="card">
+                    cardDiv.innerHTML = `
                         <div class="header">
                             <div class="logo-section">
                                 <img src="https://kairoscloud.github.io/main/Assets/lax0ZXTk.png" class="logo-img" alt="Kairos Cloud">
                                 <div class="sub-text">${locationName} | School Contact Form</div>
                             </div>
                             <div class="qr-section">
-                                <img src="${qrUrl}" class="qr-code" alt="QR">
+                                <div id="qr-${uniqueID}" class="qr-code-container"></div>
                                 <div class="id-label">ID_${uniqueID}</div>
                             </div>
                         </div>
@@ -378,9 +493,20 @@
                                 <div class="line"></div>
                             </div>
                         </div>
-                    </div>
-                `;
-                    container.insertAdjacentHTML("beforeend", cardHtml);
+                    `;
+
+                    currentSheet.appendChild(cardDiv);
+
+                    // Generate QR Code Client-Side
+                    // We must wait for the element to be in the DOM (it is, via appendChild)
+                    new QRCode(document.getElementById(`qr-${uniqueID}`), {
+                        text: `https://sites.kairoscloud.io/f/${uniqueID}`,
+                        width: 80,
+                        height: 80,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.L,
+                    });
                 }
             }
 
@@ -405,23 +531,31 @@
                 btn.disabled = true;
 
                 try {
-                    const batch = firestore.batch();
                     const locationParam = new URLSearchParams(
                         window.location.search,
                     ).get("locationID");
 
-                    generatedIds.forEach((id) => {
-                        const docRef = firestore.collection("cards").doc(id);
-                        // Only setting locationID as requested
-                        batch.set(docRef, {
-                            locationID: locationParam,
-                        });
-                    });
+                    // Process in batches of 500 (Firestore batch limit)
+                    const chunks = [];
+                    for (let i = 0; i < generatedIds.length; i += 400) {
+                        chunks.push(generatedIds.slice(i, i + 400));
+                    }
 
-                    await batch.commit();
+                    for (const chunk of chunks) {
+                        const batch = firestore.batch();
+                        chunk.forEach((id) => {
+                            const docRef = firestore
+                                .collection("cards")
+                                .doc(id);
+                            batch.set(docRef, {
+                                locationID: locationParam,
+                            });
+                        });
+                        await batch.commit();
+                    }
 
                     // Update UI state
-                    statusEl.textContent = "Saved successfully!";
+                    statusEl.textContent = `Saved ${generatedIds.length} cards successfully!`;
                     setTimeout(() => {
                         statusEl.style.display = "none";
                     }, 3000);
@@ -432,7 +566,6 @@
                 } catch (error) {
                     console.error("Error saving to firestore:", error);
                     statusEl.textContent = "Error saving records.";
-                    // Re-enable button to try again or refresh manualy
                     btn.disabled = false;
                 }
             });
