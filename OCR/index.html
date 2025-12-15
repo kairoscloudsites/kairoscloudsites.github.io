@@ -133,8 +133,9 @@
             }
 
             .btn:disabled {
-                background-color: #5f6368;
+                background-color: #5f6368 !important; /* Force override for validation state */
                 cursor: not-allowed;
+                opacity: 0.7;
             }
 
             /* Form Styles */
@@ -190,12 +191,27 @@
                 border-radius: 4px;
                 color: #fff;
                 font-size: 14px;
-                transition: border-color 0.3s;
+                transition:
+                    border-color 0.3s,
+                    box-shadow 0.3s;
             }
 
             input:focus {
                 outline: none;
                 border-color: #2196f3;
+            }
+
+            /* Validation Styling */
+            input.invalid {
+                border-color: #f44336 !important;
+                background-color: rgba(244, 67, 54, 0.1);
+            }
+
+            .error-hint {
+                color: #f44336;
+                font-size: 11px;
+                margin-top: 4px;
+                display: none;
             }
 
             .checkbox-group {
@@ -614,6 +630,8 @@ Raw Data:
 ${fullRawText}
 
 Return ONLY the valid JSON Array. Do not wrap in markdown.
+Make sure the email(s) and phone number(s) are properly formatted.
+Phone numbers should be in E.164 format (e.g., +15550001234).
 `;
                 const geminiResp = await ai(prompt);
                 console.log("Gemini Output:", geminiResp);
@@ -624,6 +642,8 @@ Return ONLY the valid JSON Array. Do not wrap in markdown.
                     const cleanJson = geminiResp
                         .replace(/```json/g, "")
                         .replace(/```/g, "")
+                        .replace(/ID_/g, "") // frequently shows up in the gemini output
+                        .replace(/ID /g, "")
                         .trim();
                     parsedArray = JSON.parse(cleanJson);
                     if (!Array.isArray(parsedArray)) {
@@ -636,12 +656,94 @@ Return ONLY the valid JSON Array. Do not wrap in markdown.
                 }
 
                 renderCards(parsedArray);
-                saveBtn.disabled = false;
+                // Validation will be triggered inside renderCards
+            }
+
+            // --- Validation Logic ---
+            function isValidId(val) {
+                // Required, 8-digit string, Base-62 only
+                const re = /^[a-zA-Z0-9]{8}$/;
+                return re.test(val);
+            }
+
+            function isValidName(val) {
+                // Required, not empty
+                return val && val.trim().length > 0;
+            }
+
+            function isValidPhone(val) {
+                // Not required. If present, E.164
+                if (!val || val.trim() === "") return true;
+                // E.164 Regex: + followed by 1 to 15 digits
+                const re = /^\+[1-9]\d{1,14}$/;
+                return re.test(val.trim());
+            }
+
+            function isValidEmail(val) {
+                // Not required. If present, RFC 5322 compatible
+                if (!val || val.trim() === "") return true;
+                // Standard robust email regex
+                const re =
+                    /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+                return re.test(val.trim());
+            }
+
+            function validateForms() {
+                const cardEntries = document.querySelectorAll(".card-entry");
+                let allCardsValid = true;
+
+                cardEntries.forEach((card) => {
+                    const idInput = card.querySelector(".inp-id");
+                    const nameInput = card.querySelector(".inp-name");
+                    const phoneInput = card.querySelector(".inp-phone");
+                    const emailInput = card.querySelector(".inp-email");
+
+                    const idValid = isValidId(idInput.value);
+                    const nameValid = isValidName(nameInput.value);
+                    const phoneValid = isValidPhone(phoneInput.value);
+                    const emailValid = isValidEmail(emailInput.value);
+
+                    // Toggle Error Styling
+                    idValid
+                        ? idInput.classList.remove("invalid")
+                        : idInput.classList.add("invalid");
+                    nameValid
+                        ? nameInput.classList.remove("invalid")
+                        : nameInput.classList.add("invalid");
+                    phoneValid
+                        ? phoneInput.classList.remove("invalid")
+                        : phoneInput.classList.add("invalid");
+                    emailValid
+                        ? emailInput.classList.remove("invalid")
+                        : emailInput.classList.add("invalid");
+
+                    if (!idValid || !nameValid || !phoneValid || !emailValid) {
+                        allCardsValid = false;
+                    }
+                });
+
+                // Update Save Button State
+                if (allCardsValid && cardEntries.length > 0) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "Save All to Database";
+                    saveBtn.style.backgroundColor = "#4caf50";
+                    saveBtn.style.cursor = "pointer";
+                } else {
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = "Data needs review";
+                    saveBtn.style.backgroundColor = "#555";
+                    saveBtn.style.cursor = "not-allowed";
+                }
             }
 
             // 4. Render Dynamic Forms
             function renderCards(dataArray) {
                 cardsContainer.innerHTML = "";
+
+                if (!dataArray || dataArray.length === 0) {
+                    saveBtn.disabled = true;
+                    return;
+                }
 
                 dataArray.forEach((data, index) => {
                     const div = document.createElement("div");
@@ -649,28 +751,40 @@ Return ONLY the valid JSON Array. Do not wrap in markdown.
                     div.innerHTML = `
                         <div class="card-entry-header">Card ${index + 1}</div>
                         <div class="form-group">
-                            <label>Card Unique ID</label>
-                            <input type="text" class="inp-id" value="${data.id || ""}" placeholder="ID_..." autocomplete="off" />
+                            <label>Card Unique ID <span style="color:#f44336">*</span></label>
+                            <input type="text" class="inp-id" value="${data.id || ""}" placeholder="e.g. AbC123xy" autocomplete="off" />
                         </div>
                         <div class="form-group">
-                            <label>Student Name</label>
+                            <label>Student Name <span style="color:#f44336">*</span></label>
                             <input type="text" class="inp-name" value="${data.name || ""}" placeholder="Name" autocomplete="off" />
                         </div>
                         <div class="form-group">
                             <label>Phone Number</label>
-                            <input type="tel" class="inp-phone" value="${data.phone_number || ""}" placeholder="Phone" autocomplete="off" />
+                            <input type="tel" class="inp-phone" value="${data.phone_number || ""}" placeholder="+15551234567" autocomplete="off" />
                         </div>
                         <div class="form-group">
                             <label>Email Address</label>
-                            <input type="email" class="inp-email" value="${data.email || ""}" placeholder="Email" autocomplete="off" />
+                            <input type="email" class="inp-email" value="${data.email || ""}" placeholder="user@example.com" autocomplete="off" />
                         </div>
                     `;
                     cardsContainer.appendChild(div);
+
+                    // Attach real-time validation listeners
+                    const inputs = div.querySelectorAll("input");
+                    inputs.forEach((input) => {
+                        input.addEventListener("input", validateForms);
+                    });
                 });
+
+                // Run initial validation once rendered
+                validateForms();
             }
 
             // 5. Save Logic (Iterate all cards)
             saveBtn.addEventListener("click", async () => {
+                // Extra safety check
+                if (saveBtn.disabled) return;
+
                 saveBtn.disabled = true;
                 saveBtn.textContent = "Saving Batch...";
                 statusDisplay.style.display = "none";
@@ -692,10 +806,7 @@ Return ONLY the valid JSON Array. Do not wrap in markdown.
                     const phone = card.querySelector(".inp-phone").value.trim();
                     const email = card.querySelector(".inp-email").value.trim();
 
-                    if (!id) {
-                        errorLog += `Card ${i + 1}: Skipped (No ID)\n`;
-                        continue;
-                    }
+                    // Note: Validation logic ensures these fields are valid before clicking save.
 
                     try {
                         let contactID = "";
@@ -737,14 +848,16 @@ Return ONLY the valid JSON Array. Do not wrap in markdown.
                 if (successCount === entries.length) {
                     statusDisplay.className = "status-msg status-success";
                     statusDisplay.textContent = `All ${successCount} cards saved successfully!`;
+                    // Keep button disabled to prevent double save
+                    saveBtn.textContent = "Saved Successfully";
                 } else {
                     statusDisplay.className = "status-msg status-error";
                     statusDisplay.textContent = `Saved ${successCount}/${entries.length} cards.\nErrors:\n${errorLog}`;
+                    // Re-enable save if there were errors
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "Save All to Database";
                 }
                 statusDisplay.style.display = "block";
-
-                saveBtn.textContent = "Save All to Database";
-                saveBtn.disabled = false;
             });
 
             // --- GHL Helper (Unchanged logic, just separated) ---
@@ -762,8 +875,8 @@ Return ONLY the valid JSON Array. Do not wrap in markdown.
                     firstName,
                     lastName,
                     name: contactData.name.trim(),
-                    email: contactData.email,
-                    phone: contactData.phone,
+                    email: contactData.email || undefined,
+                    phone: contactData.phone || undefined,
                     tags: ["student-card-scan"],
                     source: "OCR App",
                 };

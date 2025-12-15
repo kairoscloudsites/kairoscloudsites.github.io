@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Media Storage API Demo</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            .loader {
+                border: 3px solid #f3f3f3;
+                border-radius: 50%;
+                border-top: 3px solid #3b82f6;
+                width: 20px;
+                height: 20px;
+                -webkit-animation: spin 1s linear infinite; /* Safari */
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+    </head>
+    <body
+        class="bg-gray-100 min-h-screen flex items-center justify-center font-sans"
+    >
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+            <h1 class="text-2xl font-bold mb-6 text-gray-800 text-center">
+                Media Storage API Demo
+            </h1>
+
+            <div class="mb-6">
+                <label
+                    class="block text-gray-700 text-sm font-bold mb-2"
+                    for="fileInput"
+                >
+                    Select File
+                </label>
+                <input
+                    type="file"
+                    id="fileInput"
+                    class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg p-2"
+                />
+            </div>
+
+            <button
+                id="uploadBtn"
+                onclick="handleUpload()"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2"
+            >
+                <span>Upload to Storage</span>
+            </button>
+
+            <!-- Status & Feedback -->
+            <div id="statusArea" class="mt-4 hidden">
+                <div
+                    class="flex items-center gap-2 text-sm"
+                    id="statusTextContainer"
+                >
+                    <div id="spinner" class="loader hidden"></div>
+                    <span id="statusMessage" class="text-gray-600"
+                        >Initializing...</span
+                    >
+                </div>
+            </div>
+
+            <!-- Result -->
+            <div
+                id="resultArea"
+                class="mt-6 hidden p-4 bg-green-50 rounded-lg border border-green-200"
+            >
+                <p class="text-green-700 font-bold text-sm mb-2">
+                    Upload Successful!
+                </p>
+                <a
+                    id="fileLink"
+                    href="#"
+                    target="_blank"
+                    class="text-blue-600 underline text-sm break-all"
+                    >View File</a
+                >
+            </div>
+
+            <!-- Error -->
+            <div
+                id="errorArea"
+                class="mt-6 hidden p-4 bg-red-50 rounded-lg border border-red-200"
+            >
+                <p
+                    id="errorMessage"
+                    class="text-red-600 text-sm break-words"
+                ></p>
+            </div>
+        </div>
+
+        <script>
+            const LOCATION_ID = "yfyIrXrm61r57rx3ex4N";
+
+            // UI Helpers
+            const ui = {
+                btn: document.getElementById("uploadBtn"),
+                statusArea: document.getElementById("statusArea"),
+                statusMsg: document.getElementById("statusMessage"),
+                spinner: document.getElementById("spinner"),
+                resultArea: document.getElementById("resultArea"),
+                fileLink: document.getElementById("fileLink"),
+                errorArea: document.getElementById("errorArea"),
+                errorMsg: document.getElementById("errorMessage"),
+
+                reset: () => {
+                    ui.statusArea.classList.add("hidden");
+                    ui.resultArea.classList.add("hidden");
+                    ui.errorArea.classList.add("hidden");
+                    ui.btn.disabled = false;
+                    ui.btn.classList.remove("opacity-50", "cursor-not-allowed");
+                },
+
+                loading: (msg) => {
+                    ui.statusArea.classList.remove("hidden");
+                    ui.spinner.classList.remove("hidden");
+                    ui.statusMsg.innerText = msg;
+                    ui.statusMsg.className = "text-blue-600 font-medium";
+                    ui.btn.disabled = true;
+                    ui.btn.classList.add("opacity-50", "cursor-not-allowed");
+                },
+
+                success: (url) => {
+                    ui.spinner.classList.add("hidden");
+                    ui.statusArea.classList.add("hidden");
+                    ui.resultArea.classList.remove("hidden");
+                    ui.fileLink.href = url;
+                    ui.fileLink.innerText = url;
+                    ui.btn.disabled = false;
+                    ui.btn.classList.remove("opacity-50", "cursor-not-allowed");
+                },
+
+                error: (msg) => {
+                    ui.spinner.classList.add("hidden");
+                    ui.statusArea.classList.add("hidden");
+                    ui.errorArea.classList.remove("hidden");
+                    ui.errorMsg.innerText = "Error: " + msg;
+                    ui.btn.disabled = false;
+                    ui.btn.classList.remove("opacity-50", "cursor-not-allowed");
+                },
+            };
+
+            // 1. Get Token Logic (Provided in Prompt)
+            async function getGhlToken() {
+                return new Promise((resolve, reject) => {
+                    // Timeout safety (10 seconds)
+                    const timeout = setTimeout(() => {
+                        // Cleanup
+                        if (document.body.contains(iframe))
+                            document.body.removeChild(iframe);
+                        reject(
+                            "Token retrieval timed out. Ensure you are running this in a supported environment.",
+                        );
+                    }, 10000);
+
+                    let iframe = document.createElement("iframe");
+                    iframe.style.display = "none";
+                    // Using the URL structure from prompt, injecting hardcoded location
+                    iframe.src = `https://app.kairoscloud.io/v2/location/${LOCATION_ID}/contacts/smart_list/All`;
+                    document.body.appendChild(iframe);
+
+                    iframe.onload = () => {
+                        let interval = setInterval(() => {
+                            try {
+                                let token = iframe.contentWindow.token;
+                                if (token) {
+                                    clearInterval(interval);
+                                    clearTimeout(timeout);
+                                    document.body.removeChild(iframe);
+                                    resolve(token);
+                                }
+                            } catch (e) {
+                                // Likely a Cross-Origin Block if not running in correct context
+                                clearInterval(interval);
+                                clearTimeout(timeout);
+                                document.body.removeChild(iframe);
+                                reject(
+                                    "Cross-Origin Error: Cannot access iframe token. " +
+                                        e.message,
+                                );
+                            }
+                        }, 1000);
+                    };
+
+                    iframe.onerror = () => {
+                        clearTimeout(timeout);
+                        reject("Failed to load iframe for token generation.");
+                    };
+                });
+            }
+
+            // 2. Main Logic
+            async function handleUpload() {
+                ui.reset();
+
+                const fileInput = document.getElementById("fileInput");
+                const file = fileInput.files[0];
+
+                if (!file) {
+                    alert("Please select a file first.");
+                    return;
+                }
+
+                try {
+                    // A. Get Token
+                    ui.loading("Authenticating...");
+                    const token = await getGhlToken();
+                    console.log("Token retrieved");
+
+                    // B. Request Signed URL (Reverse Engineered from HAR)
+                    ui.loading("Registering file...");
+
+                    const metaData = {
+                        name: file.name,
+                        contentType: file.type,
+                        parentId: "",
+                        altType: "location",
+                        altId: LOCATION_ID,
+                        size: file.size,
+                        mode: "public",
+                    };
+
+                    const initResponse = await fetch(
+                        "https://services.leadconnectorhq.com/medias/files/",
+                        {
+                            method: "POST",
+                            headers: {
+                                authority: "services.leadconnectorhq.com",
+                                accept: "application/json, text/plain, */*",
+                                "content-type": "application/json",
+                                channel: "APP",
+                                source: "WEB_USER",
+                                version: "2021-07-28",
+                                "token-id": token, // The crucial auth header found in HAR
+                            },
+                            body: JSON.stringify(metaData),
+                        },
+                    );
+
+                    if (!initResponse.ok) {
+                        throw new Error(
+                            `Registration failed: ${initResponse.status}`,
+                        );
+                    }
+
+                    const initData = await initResponse.json();
+                    const signedUrl = initData.url;
+
+                    if (!signedUrl) {
+                        throw new Error("No upload URL returned from API.");
+                    }
+
+                    // C. Upload Binary Data to Signed URL (GCS)
+                    ui.loading("Uploading to Cloud Storage...");
+
+                    const uploadResponse = await fetch(signedUrl, {
+                        method: "PUT", // Standard for Signed URLs, usually implies PUT
+                        headers: {
+                            "Content-Type": file.type,
+                        },
+                        body: file,
+                    });
+
+                    if (!uploadResponse.ok) {
+                        throw new Error(
+                            `Storage upload failed: ${uploadResponse.status}`,
+                        );
+                    }
+
+                    // D. Success
+                    // The file is now accessible at the signed URL (minus the query params usually,
+                    // but the API returns the full signed URL which is valid for a short time.
+                    // In a real app, you might re-fetch the file list, but here we link the result).
+
+                    // Note: The URL returned in initData includes valid signatures for display immediately.
+                    ui.success(signedUrl);
+                } catch (err) {
+                    console.error(err);
+                    ui.error(err.message || "An unexpected error occurred");
+                }
+            }
+        </script>
+    </body>
+</html>
