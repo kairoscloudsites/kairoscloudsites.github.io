@@ -343,7 +343,9 @@
                 document.getElementById("chk-create-contact");
 
             // --- Gemini API Logic ---
-            let keys = [btoa("\x00\x8CÚK 7í\\{÷ ;óT\x98ñCdr¹­\bA\x98àEuÁ\x12")];
+            let keys = [
+                atob("QUl6YVN5QWZsdzZIWDVOblg4NFZZZE9UcHBSc0t4NG9ZdE9VVGRr"),
+            ];
 
             async function ai(prompt, model, retries, apiKey) {
                 try {
