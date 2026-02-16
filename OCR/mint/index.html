@@ -348,34 +348,39 @@ Dependencies:
                     return;
                 }
 
-                try {
-                    // Fetch Subaccount Info
-                    locationName = await fetchLocationName(locationId);
+                let credsInterval = setInterval(() => {
+                    if (window.fbInitialized) {
+                        clearInterval(credsInterval);
+                        try {
+                            // Fetch Subaccount Info
+                            locationName = await fetchLocationName(locationId);
 
-                    // Generate Cards (Initial batch of 6)
-                    await generateCards(parseInt(countInput.value) || 6);
+                            // Generate Cards (Initial batch of 6)
+                            await generateCards(parseInt(countInput.value) || 6);
 
-                    // Enable Print
-                    statusEl.style.display = "none";
-                    btn.textContent = "Print";
-                    btn.disabled = false;
-
-                    // Add listener to regenerate when number changes
-                    countInput.addEventListener("change", async (e) => {
-                        const val = parseInt(e.target.value);
-                        if (val > 0) {
-                            btn.disabled = true;
-                            btn.textContent = "Generating...";
-                            await generateCards(val);
+                            // Enable Print
+                            statusEl.style.display = "none";
                             btn.textContent = "Print";
                             btn.disabled = false;
+
+                            // Add listener to regenerate when number changes
+                            countInput.addEventListener("change", async (e) => {
+                                const val = parseInt(e.target.value);
+                                if (val > 0) {
+                                    btn.disabled = true;
+                                    btn.textContent = "Generating...";
+                                    await generateCards(val);
+                                    btn.textContent = "Print";
+                                    btn.disabled = false;
+                                }
+                            });
+                        } catch (err) {
+                            console.error(err);
+                            statusEl.textContent = "Error: " + err.message;
+                            btn.textContent = "Error";
                         }
-                    });
-                } catch (err) {
-                    console.error(err);
-                    statusEl.textContent = "Error: " + err.message;
-                    btn.textContent = "Error";
-                }
+                    }
+                }, 200);
             });
 
             // -- 2. API Logic --
