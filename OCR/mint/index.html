@@ -1,579 +1,1734 @@
 <!--
-OCR Contact Card Minter
-This is a static HTML/CSS/JS page that generates printable sheets of contact info cards.
-Students write on these cards, and they are scanned to auto-fill their info digitally.
+  OCR Contact Card Designer
+  Allows admins to design custom contact card templates using an SVG editor.
+  Templates are saved to Firebase: ocr_templates/{locationId}/cards/{cardId}
+  When printed, unique 12-char IDs (XR prefix) and QR codes are generated per card.
 
-Layout:
-- Card Dimensions: 4.25 x 3.66667 inches.
-- Sheet: Prints 6 cards (2x3) on a standard A4 8.5 x 11 inch page.
-- Pagination: If more than 6 cards are requested, multiple sheets are generated with page breaks.
+  Card size options:
+    6/page (2×3): 4.25 × 3.667 in each  = 408 × 352 px at 96dpi
+    4/page (2×2): 4.25 × 5.5 in each    = 408 × 528 px at 96dpi
+    3/page (1×3): 8.5 × 3.667 in each   = 816 × 352 px at 96dpi
+    2/page (1×2): 8.5 × 5.5 in each     = 816 × 528 px at 96dpi
+    1/page (1×1): 8.5 × 11 in each      = 816 × 1056 px at 96dpi
 
-Dynamic Data:
-- Subaccount Name: Fetched via GHL API using "locationID" URL parameter and window.globalLocationAccessKey.
-- Unique ID: A random base62 string of length 8. Uniqueness is statistically assumed (no database check).
-- QR Code: Generated client-side using qrcodejs. Links to sites.kairoscloud.io/f/<uniqueID>.
-
-Workflow:
-1. Page loads, fetches location name.
-2. Generates the default number of cards (6).
-3. User can adjust the number of cards.
-4. "Print" button triggers window.print().
-5. After printing, the "afterprint" event saves all generated IDs to Firestore collection "cards" with the locationID.
-
-Dependencies:
-- Firebase (App, Firestore)
-- globalFirebase.js (Config)
-- qrcodejs (QR Generation)
+  ID Character Set (ambiguous chars removed):
+    Removed digits: 0,1,2,5,6,8,9
+    Removed uppercase: I,O,D,S,B,G,Z
+    Removed lowercase: l,b,q,g
+    Uppercase only: C,V,W,X
 -->
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Generate Contact Cards | Kairos Cloud</title>
-        <link
-            rel="icon"
-            type="image/png"
-            href="http://kairoscloud.github.io/main/Assets/favicon.png"
-        />
-        <!-- Firebase Dependencies -->
-        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-        <!-- QR Code Library -->
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-        <!-- Custom Configuration -->
-        <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card Designer | Kairos Cloud</title>
+  <link rel="icon" href="http://kairoscloud.github.io/main/Assets/favicon.png">
 
-        <style>
-            @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap");
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
 
-            :root {
-                --card-width: 4.25in;
-                --card-height: 3.66667in;
-                --blue: #2d89cd;
-            }
+  <!-- QR Code Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
-            * {
-                box-sizing: border-box;
-            }
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-            body {
-                margin: 0;
-                padding: 0;
-                font-family: "Roboto", sans-serif;
-                background-color: #f0f0f0;
-            }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-            /* Main Container for multiple sheets */
-            #sheets-wrapper {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 40px;
-                padding: 40px 0;
-            }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: #f0f2f5;
+      color: #1a1f2e;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      font-size: 13px;
+    }
 
-            /* Printable Sheet */
-            .sheet {
-                width: 8.5in;
-                height: 11in;
-                background: white;
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                grid-template-rows: 1fr 1fr 1fr;
-                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                page-break-after: always; /* Ensure new page while printing */
-                break-after: page;
-            }
+    /* ── TOP BAR ─────────────────────────────────── */
+    #topbar {
+      background: #ffffff;
+      border-bottom: 1px solid #d0d7de;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 52px;
+      flex-shrink: 0;
+    }
 
-            /* Card Layout */
-            .card {
-                width: var(--card-width);
-                height: var(--card-height);
-                padding: 0.4in;
-                position: relative;
-                display: flex;
-                flex-direction: column;
-            }
+    .topbar-logo {
+      font-weight: 700;
+      font-size: 15px;
+      color: #4981BE;
+      white-space: nowrap;
+    }
 
-            /* Cut Lines (Dashed) */
-            .card:nth-child(2n + 1) {
-                border-right: 1px dashed #ccc;
-            }
-            /* Add border bottom to the first 4 cards (top 2 rows) */
-            .card:nth-child(-n + 4) {
-                border-bottom: 1px dashed #ccc;
-            }
+    #template-name-input {
+      background: #f1f3f5;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      color: #1a1f2e;
+      padding: 6px 10px;
+      font-size: 13px;
+      width: 180px;
+    }
+    #template-name-input:focus { outline: none; border-color: #4981BE; }
 
-            /* Header Area */
-            .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-start;
-                margin-bottom: 20px;
-            }
+    /* Card size buttons in topbar */
+    .size-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 5px 8px;
+      border: 1.5px solid #d0d7de;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #f1f3f5;
+      color: #57606a;
+      font-size: 10px;
+      font-weight: 500;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .size-btn:hover { border-color: #4981BE; color: #1a1f2e; }
+    .size-btn.active { border-color: #4981BE; background: #dbe8f7; color: #4981BE; }
+    .size-btn svg { display: block; }
 
-            .logo-section {
-                flex: 1;
-            }
+    .topbar-spacer { flex: 1; }
 
-            .logo-img {
-                max-width: 200px;
-                height: auto;
-                margin-bottom: 8px;
-                display: block;
-            }
+    .btn { border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; padding: 7px 14px; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
+    .btn-primary { background: #4981BE; color: #fff; }
+    .btn-primary:hover { background: #5a94d4; }
+    .btn-secondary { background: #f1f3f5; color: #1a1f2e; border: 1px solid #d0d7de; }
+    .btn-secondary:hover { background: #d0d7de; }
+    .btn-danger { background: #d73a49; color: #fff; }
+    .btn-danger:hover { background: #e04050; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-            .sub-text {
-                font-size: 12px;
-                color: #333;
-                margin-top: 5px;
-            }
+    /* ── MAIN LAYOUT ─────────────────────────────── */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
 
-            .qr-section {
-                text-align: center;
-                margin-top: -5px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-            }
+    /* ── LEFT PANEL — Templates ───────────────────── */
+    #left-panel {
+      width: 210px;
+      background: #ffffff;
+      border-right: 1px solid #d0d7de;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
 
-            /* QR Container for JS generation */
-            .qr-code-container {
-                width: 80px;
-                height: 80px;
-            }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid #d0d7de;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #57606a;
+    }
 
-            .qr-code-container img {
-                display: block; /* Remove inline spacing */
-            }
+    #templates-list {
+      flex: 1;
+      overflow-y: auto;
+    }
 
-            .id-label {
-                font-family: monospace;
-                font-size: 12px;
-                margin-top: 2px;
-                letter-spacing: 1px;
-            }
+    .template-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #f1f3f5;
+      transition: background 0.1s;
+    }
+    .template-item:hover { background: rgba(0,0,0,0.04); }
+    .template-item.active { background: #dbe8f7; }
 
-            /* Form Area */
-            .form-area {
-                flex-grow: 1;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                gap: 25px;
-                padding-left: 10px;
-                padding-right: 10px;
-            }
+    .template-item-info { flex: 1; min-width: 0; }
+    .template-item-name {
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #1a1f2e;
+    }
+    .template-item-meta { font-size: 11px; color: #57606a; margin-top: 1px; }
 
-            .form-line {
-                display: flex;
-                align-items: flex-end;
-                font-size: 16px;
-            }
+    .template-delete-btn {
+      background: none;
+      border: none;
+      color: #6e7781;
+      cursor: pointer;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 14px;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .template-item:hover .template-delete-btn { opacity: 1; }
+    .template-delete-btn:hover { color: #f85149; background: rgba(248,81,73,0.15); }
 
-            .label {
-                /* Fixed width and right align ensures lines start at same spot */
-                width: 60px;
-                text-align: right;
-                margin-right: 15px;
-                font-weight: 400;
-                color: #333;
-                white-space: nowrap;
-            }
+    /* ── CENTER — Canvas ──────────────────────────── */
+    #canvas-area {
+      flex: 1;
+      background: #e8ecf0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+      position: relative;
+    }
 
-            .line {
-                flex-grow: 1;
-                border-bottom: 1px solid #000;
-            }
+    #canvas-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 100%;
+      min-height: 100%;
+      padding: 40px;
+    }
 
-            /* Action Button & Input */
-            #action-container {
-                position: fixed;
-                bottom: 30px;
-                right: 30px;
-                z-index: 1000;
-                display: flex;
-                flex-direction: column;
-                align-items: flex-end;
-                gap: 10px;
-                background: rgba(255, 255, 255, 0.9);
-                padding: 15px;
-                border-radius: 12px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
-            }
+    #card-svg {
+      display: block;
+      background: white;
+      box-shadow: 0 0 0 1px #d0d7de, 0 4px 16px rgba(0,0,0,0.12);
+    }
 
-            .input-group {
-                display: flex;
-                flex-direction: column;
-                align-items: flex-end;
-                gap: 5px;
-                margin-bottom: 5px;
-            }
+    #zoom-controls {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      display: flex;
+      gap: 4px;
+      z-index: 10;
+    }
+    #zoom-controls button {
+      background: #ffffff;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      color: #1a1f2e;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 5px 10px;
+      transition: all 0.15s;
+    }
+    #zoom-controls button:hover { background: #f1f3f5; border-color: #4981BE; }
+    #zoom-label { min-width: 52px; text-align: center; }
 
-            .input-group label {
-                font-size: 12px;
-                color: #555;
-                font-weight: bold;
-            }
+    /* ── RIGHT PANEL — Tools & Properties ─────────── */
+    #right-panel {
+      width: 224px;
+      background: #ffffff;
+      border-left: 1px solid #d0d7de;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
 
-            #card-count {
-                padding: 8px;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                width: 80px;
-                font-size: 16px;
-                text-align: right;
-            }
+    /* Tools */
+    #tools-panel { padding: 6px; border-bottom: 1px solid #d0d7de; }
 
-            #status-text {
-                background: rgba(0, 0, 0, 0.7);
-                color: white;
-                padding: 5px 10px;
-                border-radius: 4px;
-                font-size: 14px;
-                display: none; /* Hidden by default */
-            }
+    .tool-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      width: 100%;
+      border: none;
+      background: none;
+      color: #57606a;
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 6px;
+      text-align: left;
+      transition: all 0.12s;
+    }
+    .tool-btn:hover { background: rgba(0,0,0,0.06); color: #1a1f2e; }
+    .tool-btn.active { background: #dbe8f7; color: #4981BE; }
+    .tool-icon { width: 18px; text-align: center; font-size: 15px; flex-shrink: 0; }
+    .tool-key {
+      margin-left: auto;
+      font-size: 10px;
+      background: #f1f3f5;
+      border: 1px solid #d0d7de;
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: #6e7781;
+    }
 
-            #action-btn {
-                background-color: var(--blue);
-                color: white;
-                border: none;
-                padding: 15px 30px;
-                font-size: 18px;
-                font-weight: bold;
-                cursor: pointer;
-                border-radius: 9px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-                transition:
-                    transform 0.2s,
-                    background-color 0.2s;
-                width: 100%;
-            }
+    /* Properties */
+    #properties-panel { padding: 0; flex: 1; }
+    .prop-section { padding: 12px; border-bottom: 1px solid #f1f3f5; }
+    .prop-section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #57606a;
+      margin-bottom: 10px;
+    }
+    .prop-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 7px;
+    }
+    .prop-row:last-child { margin-bottom: 0; }
+    .prop-label {
+      font-size: 12px;
+      color: #57606a;
+      width: 64px;
+      flex-shrink: 0;
+    }
+    .prop-row input[type="number"],
+    .prop-row input[type="text"],
+    .prop-row select {
+      flex: 1;
+      background: #f1f3f5;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      color: #1a1f2e;
+      padding: 4px 7px;
+      font-size: 12px;
+      min-width: 0;
+    }
+    .prop-row input:focus,
+    .prop-row select:focus { outline: none; border-color: #4981BE; }
 
-            #action-btn:hover {
-                transform: translateY(-2px);
-                background-color: #247bbd;
-            }
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 7px;
+    }
+    .color-swatch {
+      width: 28px;
+      height: 24px;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      cursor: pointer;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .color-swatch input[type="color"] {
+      position: absolute;
+      inset: -4px;
+      width: calc(100% + 8px);
+      height: calc(100% + 8px);
+      opacity: 0;
+      cursor: pointer;
+    }
+    .color-swatch-bg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .none-toggle {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: #57606a;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .none-toggle input { cursor: pointer; }
 
-            #action-btn:disabled {
-                background-color: #999;
-                cursor: wait;
-                transform: none;
-            }
+    .prop-empty {
+      padding: 20px 16px;
+      color: #6e7781;
+      font-size: 12px;
+      font-style: italic;
+      text-align: center;
+      line-height: 1.5;
+    }
 
-            /* Print Media Query */
-            @media print {
-                @page {
-                    size: A4;
-                    margin: 0;
-                }
+    /* ── PRINT MODAL ──────────────────────────────── */
+    #print-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    #print-modal.open { display: flex; }
+    #print-modal-inner {
+      background: #ffffff;
+      border: 1px solid #d0d7de;
+      border-radius: 12px;
+      padding: 28px;
+      width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    #print-modal-inner h3 { margin-bottom: 20px; font-size: 16px; }
 
-                body {
-                    background: white;
-                }
+    .modal-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .modal-row label { width: 110px; color: #57606a; font-size: 13px; }
+    .modal-row input[type="number"] {
+      flex: 1;
+      background: #f1f3f5;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      color: #1a1f2e;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    .modal-row input:focus { outline: none; border-color: #4981BE; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions .btn { flex: 1; padding: 10px; }
 
-                #action-container {
-                    display: none;
-                }
+    /* ── TEXT EDIT OVERLAY ──────────────────────────── */
+    #text-edit-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+    }
+    #text-edit-input {
+      position: fixed;
+      background: rgba(255,255,255,0.95);
+      border: 2px solid #4981BE;
+      border-radius: 3px;
+      color: #000;
+      padding: 2px 4px;
+      min-width: 60px;
+      min-height: 20px;
+      outline: none;
+      font-size: 16px;
+      resize: none;
+      overflow: hidden;
+      line-height: 1.2;
+    }
 
-                #sheets-wrapper {
-                    margin: 0;
-                    padding: 0;
-                    gap: 0;
-                    display: block; /* Restore block for paging */
-                }
+    /* ── TOAST ────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #4981BE;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 200;
+    }
 
-                .sheet {
-                    margin: 0;
-                    box-shadow: none;
-                    width: 100%;
-                    height: 100%;
-                    /* Ensure every sheet forces a new page,
-                       except potentially the last one handled by browser */
-                    page-break-after: always;
-                    break-after: page;
-                }
+    /* Hidden file input */
+    #image-file-input { display: none; }
 
-                .sheet:last-child {
-                    page-break-after: auto;
-                    break-after: auto;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div id="action-container">
-            <span id="status-text">Loading...</span>
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d0d7de; border-radius: 3px; }
+  </style>
+</head>
+<body>
 
-            <div class="input-group">
-                <label for="card-count">Total Cards</label>
-                <input
-                    type="number"
-                    id="card-count"
-                    value="6"
-                    min="1"
-                    step="1"
-                />
-            </div>
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="topbar-logo">Card Designer</div>
 
-            <button id="action-btn" onclick="handleAction()" disabled>
-                Loading...
-            </button>
+  <input type="text" id="template-name-input" placeholder="Template name…" value="New Template">
+
+  <div style="display:flex; gap:6px; align-items:center;">
+    <button class="size-btn active" data-size="6" onclick="setCardSize(6)" title="6 cards per page (2×3)">
+      <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0.75" y="0.75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="15.75" y="0.75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="0.75" y="8.25" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="15.75" y="8.25" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="0.75" y="15.75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="15.75" y="15.75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      6/page
+    </button>
+    <button class="size-btn" data-size="4" onclick="setCardSize(4)" title="4 cards per page (2×2)">
+      <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0.75" y="0.75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="15.75" y="0.75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="0.75" y="11.75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="15.75" y="11.75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      4/page
+    </button>
+    <button class="size-btn" data-size="3" onclick="setCardSize(3)" title="3 cards per page (1×3)">
+      <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0.75" y="0.75" width="26.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="0.75" y="8.25" width="26.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="0.75" y="15.75" width="26.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      3/page
+    </button>
+    <button class="size-btn" data-size="2" onclick="setCardSize(2)" title="2 cards per page (1×2)">
+      <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0.75" y="0.75" width="26.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="0.75" y="11.75" width="26.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      2/page
+    </button>
+    <button class="size-btn" data-size="1" onclick="setCardSize(1)" title="1 card per page (1×1)">
+      <svg width="28" height="22" viewBox="0 0 28 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="0.75" y="0.75" width="26.5" height="20.5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      1/page
+    </button>
+  </div>
+
+  <div class="topbar-spacer"></div>
+
+  <button class="btn btn-secondary" onclick="openPrintDialog()">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <path d="M4 6V2.5A.5.5 0 014.5 2h7a.5.5 0 01.5.5V6" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="1" y="6" width="14" height="7" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="4" y="10" width="8" height="3" rx="0.5" fill="currentColor"/>
+      <circle cx="12" cy="8.5" r="0.8" fill="currentColor"/>
+    </svg>
+    Print
+  </button>
+  <button class="btn btn-primary" onclick="saveTemplate()">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+      <path d="M2 3.5A1.5 1.5 0 013.5 2h7.086a1.5 1.5 0 011.06.44l1.915 1.914A1.5 1.5 0 0114 5.414V12.5A1.5 1.5 0 0112.5 14h-9A1.5 1.5 0 012 12.5v-9z" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="5" y="2" width="5" height="4" rx="0.5" fill="currentColor"/>
+      <rect x="4" y="9" width="8" height="5" rx="0.5" stroke="currentColor" stroke-width="1.2"/>
+      <rect x="6.5" y="2.5" width="1.2" height="2.5" rx="0.3" fill="white"/>
+    </svg>
+    Save
+  </button>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div id="main">
+
+  <!-- LEFT: Templates -->
+  <div id="left-panel">
+    <div class="panel-header">
+      Templates
+      <button class="btn btn-secondary" style="font-size:11px; padding:3px 8px;" onclick="newTemplate()">+ New</button>
+    </div>
+    <div id="templates-list">
+      <div class="prop-empty">Loading templates…</div>
+    </div>
+  </div>
+
+  <!-- CENTER: Canvas -->
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <svg id="card-svg" xmlns="http://www.w3.org/2000/svg">
+        <!-- Background (clickable) -->
+        <rect id="card-bg" width="100%" height="100%" fill="white"/>
+        <!-- User elements layer -->
+        <g id="elements-layer"></g>
+        <!-- Selection handles layer -->
+        <g id="selection-layer"></g>
+        <!-- Fixed QR layer (always on top, not interactive in editor) -->
+        <g id="qr-layer" style="pointer-events:none;">
+          <rect id="qr-bg" fill="#f6f8fa" rx="3" stroke="#dee2e6" stroke-width="0.5"/>
+          <image id="qr-img" preserveAspectRatio="xMidYMid meet"/>
+          <text id="qr-label" font-family="monospace" text-anchor="middle" fill="#555"></text>
+        </g>
+      </svg>
+    </div>
+    <div id="zoom-controls">
+      <button onclick="adjustZoom(-0.1)">−</button>
+      <button id="zoom-label" onclick="fitCanvas()">100%</button>
+      <button onclick="adjustZoom(0.1)">+</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Tools & Properties -->
+  <div id="right-panel">
+    <!-- Tools -->
+    <div id="tools-panel">
+      <button class="tool-btn active" data-tool="select" onclick="setTool('select')">
+        <span class="tool-icon">↖</span> Select <span class="tool-key">V</span>
+      </button>
+      <button class="tool-btn" data-tool="text" onclick="setTool('text')">
+        <span class="tool-icon">T</span> Text <span class="tool-key">T</span>
+      </button>
+      <button class="tool-btn" data-tool="rect" onclick="setTool('rect')">
+        <span class="tool-icon">▭</span> Rectangle <span class="tool-key">R</span>
+      </button>
+      <button class="tool-btn" data-tool="circle" onclick="setTool('circle')">
+        <span class="tool-icon">○</span> Circle <span class="tool-key">C</span>
+      </button>
+      <button class="tool-btn" data-tool="line" onclick="setTool('line')">
+        <span class="tool-icon">—</span> Line <span class="tool-key">L</span>
+      </button>
+      <button class="tool-btn" data-tool="image" onclick="setTool('image')">
+        <span class="tool-icon">🖼</span> Image <span class="tool-key">I</span>
+      </button>
+    </div>
+
+    <!-- Properties panel -->
+    <div id="properties-panel">
+      <div class="prop-empty">Select an element<br>to edit its properties.</div>
+    </div>
+  </div>
+</div>
+
+<!-- PRINT MODAL -->
+<div id="print-modal">
+  <div id="print-modal-inner">
+    <h3>🖨 Generate & Print Cards</h3>
+    <div class="modal-row">
+      <label>Number of cards</label>
+      <input type="number" id="print-count" value="6" min="1" max="1000" oninput="updatePrintPages()">
+    </div>
+    <div class="modal-row">
+      <label>Pages</label>
+      <span id="print-pages-info" style="color:#57606a; font-size:13px;">1 page</span>
+    </div>
+    <div id="print-modal-status" style="font-size:12px; color:#57606a; min-height:18px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closePrintDialog()">Cancel</button>
+      <button class="btn btn-primary" id="generate-print-btn" onclick="generateAndPrint()">Generate & Print</button>
+    </div>
+  </div>
+</div>
+
+<!-- TEXT EDIT OVERLAY -->
+<div id="text-edit-overlay">
+  <textarea id="text-edit-input" rows="1"></textarea>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- Hidden image file input -->
+<input type="file" id="image-file-input" accept="image/*">
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════════════════════════════
+
+// Ambiguous-char-free charset for ID generation
+// Removed: 0,1,2,5,6,8,9 (digits) | I,O,D,S,B,G,Z (uppercase) | l,b,q,g (lowercase)
+// Uppercase only: C,V,W,X
+const CHARSET = 'ACEFHJKLMNPQRTUVWXYadefhijkmnoprstuyz347';
+const ID_LENGTH = 12;
+
+// Card dimensions at 96 DPI (pixels per inch)
+const CARD_DIMS = {
+  6: { w: 408,  h: 352,  cols: 2, rows: 3, label: '6/page' },
+  4: { w: 408,  h: 528,  cols: 2, rows: 2, label: '4/page' },
+  3: { w: 816,  h: 352,  cols: 1, rows: 3, label: '3/page' },
+  2: { w: 816,  h: 528,  cols: 1, rows: 2, label: '2/page' },
+  1: { w: 816,  h: 1056, cols: 1, rows: 1, label: '1/page' },
+};
+
+let zoom = 1.0;
+
+const SAMPLE_PREVIEW_ID = 'XR' + 'ACEFHJKLMNPQRTUVWXYa'.slice(0, 12);
+
+// ══════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════
+const state = {
+  elements:      [],       // [{id, type, x, y, w, h, fill, stroke, strokeWidth, rx, text, fontSize, fontFamily, fontWeight, href}]
+  selected:      null,     // selected element id
+  tool:          'select',
+  cardSize:      6,
+  templateId:    null,
+  templateName:  'New Template',
+  templates:     [],
+  locationId:    null,
+  locationName:  'School',
+  drag:          null,     // {type:'move'|'resize'|'draw', handle, startPt, origEl}
+};
+
+// ══════════════════════════════════════════════════════════════════
+// ID GENERATION
+// ══════════════════════════════════════════════════════════════════
+function generateId() {
+  const arr = new Uint32Array(ID_LENGTH);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, v => CHARSET[v % CHARSET.length]).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SVG HELPERS
+// ══════════════════════════════════════════════════════════════════
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function svgPoint(e) {
+  const svg = document.getElementById('card-svg');
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function getScale() {
+  const svg = document.getElementById('card-svg');
+  const dims = CARD_DIMS[state.cardSize];
+  return svg.getBoundingClientRect().width / dims.w;
+}
+
+function escXml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// RENDER ELEMENTS
+// ══════════════════════════════════════════════════════════════════
+function renderElements() {
+  const layer = document.getElementById('elements-layer');
+  layer.innerHTML = '';
+  for (const el of state.elements) {
+    const node = buildSvgNode(el);
+    if (node) layer.appendChild(node);
+  }
+  renderSelection();
+}
+
+function buildSvgNode(el) {
+  let node;
+  const isSelected = el.id === state.selected;
+  const cursor = state.tool === 'select' ? (isSelected ? 'move' : 'pointer') : 'default';
+
+  switch (el.type) {
+    case 'rect':
+      node = svgEl('rect', {
+        x: el.x, y: el.y, width: el.w, height: el.h,
+        fill: el.fill || 'none',
+        stroke: el.stroke || 'none',
+        'stroke-width': el.strokeWidth || 0,
+        rx: el.rx || 0,
+      });
+      break;
+
+    case 'circle':
+      node = svgEl('ellipse', {
+        cx: el.x + el.w / 2, cy: el.y + el.h / 2,
+        rx: el.w / 2, ry: el.h / 2,
+        fill: el.fill || '#cccccc',
+        stroke: el.stroke || 'none',
+        'stroke-width': el.strokeWidth || 0,
+      });
+      break;
+
+    case 'line':
+      node = svgEl('line', {
+        x1: el.x, y1: el.y, x2: el.x + el.w, y2: el.y,
+        stroke: el.stroke || '#000000',
+        'stroke-width': el.strokeWidth || 1,
+        'stroke-linecap': 'round',
+      });
+      break;
+
+    case 'text': {
+      node = svgEl('text', {
+        x: el.x, y: el.y + (el.fontSize || 16),
+        fill: el.fill || '#000000',
+        'font-size': el.fontSize || 16,
+        'font-family': el.fontFamily || 'Arial',
+        'font-weight': el.fontWeight || 'normal',
+      });
+      node.textContent = el.text || 'Text';
+      break;
+    }
+
+    case 'image':
+      node = svgEl('image', {
+        x: el.x, y: el.y, width: el.w, height: el.h,
+        href: el.href || '',
+        preserveAspectRatio: 'xMidYMid meet',
+      });
+      break;
+
+    default:
+      return null;
+  }
+
+  node.dataset.elId = el.id;
+  node.style.cursor = cursor;
+
+  // Invisible hit area for small elements
+  if (el.type === 'line') {
+    const hit = svgEl('line', {
+      x1: el.x, y1: el.y, x2: el.x + el.w, y2: el.y,
+      stroke: 'transparent',
+      'stroke-width': Math.max(10, el.strokeWidth || 1),
+    });
+    hit.dataset.elId = el.id;
+    hit.addEventListener('mousedown', onElementMousedown);
+    const g = svgEl('g');
+    g.appendChild(node);
+    g.appendChild(hit);
+    return g;
+  }
+
+  node.addEventListener('mousedown', onElementMousedown);
+  node.addEventListener('dblclick', onElementDblClick);
+  return node;
+}
+
+function onElementMousedown(e) {
+  if (state.tool !== 'select') return;
+  e.stopPropagation();
+  const id = e.currentTarget.dataset.elId || e.currentTarget.closest('[data-el-id]')?.dataset.elId;
+  if (!id) return;
+  selectElement(id);
+  const el = state.elements.find(x => x.id === id);
+  if (el) startDrag(e, 'move', el, null);
+}
+
+function onElementDblClick(e) {
+  const id = e.currentTarget.dataset.elId;
+  const el = state.elements.find(x => x.id === id);
+  if (el?.type === 'text') startTextEdit(el);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SELECTION + HANDLES
+// ══════════════════════════════════════════════════════════════════
+function renderSelection() {
+  const layer = document.getElementById('selection-layer');
+  layer.innerHTML = '';
+  if (!state.selected) return;
+
+  const el = state.elements.find(x => x.id === state.selected);
+  if (!el) return;
+
+  const sc = getScale();
+  const hs = 7 / sc;   // handle size in SVG units
+  const sw = 1.5 / sc; // stroke width
+
+  const dashLen = 4 / sc;
+
+  // Bounding box
+  const bbox = svgEl('rect', {
+    x: el.x, y: el.y,
+    width: el.w || 1, height: el.type === 'line' ? Math.max(el.strokeWidth || 1, 1) : el.h,
+    fill: 'none',
+    stroke: '#4981BE',
+    'stroke-width': sw,
+    'stroke-dasharray': `${dashLen},${dashLen * 0.75}`,
+    'pointer-events': 'none',
+  });
+  layer.appendChild(bbox);
+
+  // Handles
+  const positions = getHandlePositions(el);
+  for (const [name, [hx, hy]] of Object.entries(positions)) {
+    const handle = svgEl('rect', {
+      x: hx - hs / 2, y: hy - hs / 2,
+      width: hs, height: hs,
+      fill: 'white',
+      stroke: '#4981BE',
+      'stroke-width': sw,
+      cursor: getCursorForHandle(name),
+      'data-handle': name,
+    });
+    handle.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      startDrag(e, 'resize', el, name);
+    });
+    layer.appendChild(handle);
+  }
+}
+
+function getHandlePositions(el) {
+  const { x, y, w, h } = el;
+  if (el.type === 'line') {
+    return { l: [x, y], r: [x + w, y] };
+  }
+  return {
+    tl: [x, y],         t: [x + w / 2, y],     tr: [x + w, y],
+    r:  [x + w, y + h / 2],
+    br: [x + w, y + h], b: [x + w / 2, y + h], bl: [x, y + h],
+    l:  [x, y + h / 2],
+  };
+}
+
+function getCursorForHandle(h) {
+  const map = {
+    tl: 'nw-resize', t: 'n-resize', tr: 'ne-resize',
+    r: 'e-resize', br: 'se-resize', b: 's-resize',
+    bl: 'sw-resize', l: 'w-resize',
+  };
+  return map[h] || 'nwse-resize';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DRAG / RESIZE / DRAW STATE MACHINE
+// ══════════════════════════════════════════════════════════════════
+function startDrag(e, type, el, handle) {
+  const pt = svgPoint(e);
+  state.drag = { type, handle, startPt: pt, origEl: { ...el } };
+  e.preventDefault();
+  console.log(`[Drag] start type=${type} handle=${handle} el=${el.id}`);
+}
+
+document.addEventListener('mousemove', e => {
+  if (!state.drag) return;
+  const pt = svgPoint(e);
+  const dx = pt.x - state.drag.startPt.x;
+  const dy = pt.y - state.drag.startPt.y;
+  const el = state.elements.find(x => x.id === state.selected);
+  if (!el) return;
+  const orig = state.drag.origEl;
+
+  if (state.drag.type === 'move') {
+    el.x = orig.x + dx;
+    el.y = orig.y + dy;
+  } else if (state.drag.type === 'resize') {
+    applyResize(el, orig, state.drag.handle, dx, dy);
+  } else if (state.drag.type === 'draw') {
+    const { x: sx, y: sy } = state.drag.startPt;
+    if (el.type === 'line') {
+      el.x = Math.min(sx, pt.x);
+      el.y = orig.y;
+      el.w = Math.abs(pt.x - sx);
+    } else {
+      el.x = Math.min(sx, pt.x);
+      el.y = Math.min(sy, pt.y);
+      el.w = Math.abs(pt.x - sx);
+      el.h = Math.abs(pt.y - sy);
+    }
+  }
+
+  renderElements();
+  updatePropertiesPanel();
+});
+
+document.addEventListener('mouseup', e => {
+  if (!state.drag) return;
+  if (state.drag.type === 'draw') {
+    const el = state.elements.find(x => x.id === state.selected);
+    const MIN = 5;
+    if (el && ((el.type !== 'line' && el.w < MIN && el.h < MIN) || (el.type === 'line' && el.w < MIN))) {
+      console.log('[Draw] Element too small, removing:', el.id);
+      state.elements = state.elements.filter(x => x.id !== el.id);
+      state.selected = null;
+    } else if (el?.type === 'text') {
+      // Auto open text editor
+      setTimeout(() => startTextEdit(el), 50);
+    }
+    setTool('select');
+  }
+  state.drag = null;
+  renderElements();
+});
+
+function applyResize(el, orig, handle, dx, dy) {
+  const MIN = 8;
+  switch (handle) {
+    case 'tl': el.x = Math.min(orig.x + dx, orig.x + orig.w - MIN); el.y = Math.min(orig.y + dy, orig.y + orig.h - MIN); el.w = Math.max(orig.w - dx, MIN); el.h = Math.max(orig.h - dy, MIN); break;
+    case 't':  el.y = Math.min(orig.y + dy, orig.y + orig.h - MIN); el.h = Math.max(orig.h - dy, MIN); break;
+    case 'tr': el.y = Math.min(orig.y + dy, orig.y + orig.h - MIN); el.w = Math.max(orig.w + dx, MIN); el.h = Math.max(orig.h - dy, MIN); break;
+    case 'r':  el.w = Math.max(orig.w + dx, MIN); break;
+    case 'br': el.w = Math.max(orig.w + dx, MIN); el.h = Math.max(orig.h + dy, MIN); break;
+    case 'b':  el.h = Math.max(orig.h + dy, MIN); break;
+    case 'bl': el.x = Math.min(orig.x + dx, orig.x + orig.w - MIN); el.w = Math.max(orig.w - dx, MIN); el.h = Math.max(orig.h + dy, MIN); break;
+    case 'l':  el.x = Math.min(orig.x + dx, orig.x + orig.w - MIN); el.w = Math.max(orig.w - dx, MIN); break;
+    // Line
+    case 'r':  el.w = Math.max(orig.w + dx, MIN); break;
+    case 'l':  el.x = orig.x + dx; el.w = Math.max(orig.w - dx, MIN); break;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ELEMENT CREATION (canvas mousedown)
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('card-bg').addEventListener('mousedown', e => {
+  if (state.tool === 'select') {
+    selectElement(null);
+    return;
+  }
+  if (state.tool === 'image') {
+    document.getElementById('image-file-input').click();
+    return;
+  }
+  const pt = svgPoint(e);
+  const id = 'el_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const defaults = {
+    rect:   { fill: '#e8f0fe', stroke: '#4a90d9', strokeWidth: 1.5, rx: 4, w: 100, h: 60 },
+    circle: { fill: '#e8f0fe', stroke: '#4a90d9', strokeWidth: 1.5, w: 60, h: 60 },
+    line:   { fill: 'none',   stroke: '#333333', strokeWidth: 2, w: 120, h: 0 },
+    text:   { fill: '#333333', stroke: 'none', strokeWidth: 0, fontSize: 16, fontFamily: 'Arial', fontWeight: 'normal', text: 'Text', w: 80, h: 24 },
+  };
+  const d = defaults[state.tool] || {};
+  const newEl = { id, type: state.tool, x: pt.x, y: pt.y, ...d };
+
+  console.log('[Draw] Creating element:', newEl.type, newEl.id);
+  state.elements.push(newEl);
+  selectElement(id);
+
+  state.drag = { type: 'draw', startPt: pt, origEl: { ...newEl } };
+  e.preventDefault();
+});
+
+// Also allow drawing on elements-layer background
+document.getElementById('elements-layer').addEventListener('mousedown', e => {
+  if (e.target === document.getElementById('elements-layer') && state.tool !== 'select') {
+    document.getElementById('card-bg').dispatchEvent(new MouseEvent('mousedown', { clientX: e.clientX, clientY: e.clientY, bubbles: false }));
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// SELECTION
+// ══════════════════════════════════════════════════════════════════
+function selectElement(id) {
+  state.selected = id;
+  renderElements();
+  updatePropertiesPanel();
+  console.log('[Select] element:', id);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TOOL SWITCHING
+// ══════════════════════════════════════════════════════════════════
+function setTool(tool) {
+  state.tool = tool;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+  const svg = document.getElementById('card-svg');
+  svg.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+  if (tool !== 'select') selectElement(null);
+  console.log('[Tool] switched to:', tool);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PROPERTIES PANEL
+// ══════════════════════════════════════════════════════════════════
+function updatePropertiesPanel() {
+  const panel = document.getElementById('properties-panel');
+  const el = state.elements.find(x => x.id === state.selected);
+
+  if (!el) {
+    panel.innerHTML = '<div class="prop-empty">Select an element<br>to edit its properties.</div>';
+    return;
+  }
+
+  let html = '';
+
+  // Position & Size
+  html += `<div class="prop-section">
+    <div class="prop-section-title">Position & Size</div>
+    <div class="prop-row">
+      <span class="prop-label">X</span>
+      <input type="number" value="${Math.round(el.x)}" onchange="setProp('x', parseFloat(this.value)); renderElements()">
+      <span style="color:#555; margin: 0 2px;">Y</span>
+      <input type="number" value="${Math.round(el.y)}" onchange="setProp('y', parseFloat(this.value)); renderElements()">
+    </div>`;
+
+  if (el.type === 'line') {
+    html += `<div class="prop-row">
+      <span class="prop-label">Length</span>
+      <input type="number" value="${Math.round(el.w)}" onchange="setProp('w', parseFloat(this.value)); renderElements()">
+    </div>`;
+  } else {
+    html += `<div class="prop-row">
+      <span class="prop-label">W</span>
+      <input type="number" value="${Math.round(el.w)}" onchange="setProp('w', parseFloat(this.value)); renderElements()">
+      <span style="color:#555; margin: 0 2px;">H</span>
+      <input type="number" value="${Math.round(el.h)}" onchange="setProp('h', parseFloat(this.value)); renderElements()">
+    </div>`;
+  }
+  html += `</div>`;
+
+  // Fill
+  if (el.type !== 'line') {
+    const fillColor = el.fill === 'none' ? '#e8f0fe' : el.fill;
+    html += `<div class="prop-section">
+      <div class="prop-section-title">Fill</div>
+      <div class="color-row">
+        <div class="color-swatch" style="background:${el.fill === 'none' ? 'repeating-linear-gradient(45deg,#ddd 0,#ddd 2px,#fff 0,#fff 50%)' : el.fill};" title="Fill color">
+          <input type="color" value="${fillColor}" onchange="setProp('fill', this.value); this.closest('.color-swatch').style.background=this.value; renderElements()">
         </div>
+        <span style="flex:1; color:#8b949e; font-size:12px;">${el.fill === 'none' ? 'None' : el.fill}</span>
+        <label class="none-toggle">
+          <input type="checkbox" ${el.fill === 'none' ? 'checked' : ''} onchange="setProp('fill', this.checked ? 'none' : '${fillColor}'); updatePropertiesPanel(); renderElements()">
+          No fill
+        </label>
+      </div>
+    </div>`;
+  }
 
-        <div id="sheets-wrapper">
-            <!-- Sheets will be injected here -->
-        </div>
+  // Stroke
+  const strokeColor = el.stroke === 'none' ? '#333333' : el.stroke;
+  html += `<div class="prop-section">
+    <div class="prop-section-title">Stroke</div>
+    <div class="color-row">
+      <div class="color-swatch" style="background:${el.stroke === 'none' ? 'repeating-linear-gradient(45deg,#ddd 0,#ddd 2px,#fff 0,#fff 50%)' : el.stroke};" title="Stroke color">
+        <input type="color" value="${strokeColor}" onchange="setProp('stroke', this.value); this.closest('.color-swatch').style.background=this.value; renderElements()">
+      </div>
+      <span style="flex:1; color:#8b949e; font-size:12px;">${el.stroke === 'none' ? 'None' : el.stroke}</span>
+      <label class="none-toggle">
+        <input type="checkbox" ${el.stroke === 'none' ? 'checked' : ''} onchange="setProp('stroke', this.checked ? 'none' : '${strokeColor}'); updatePropertiesPanel(); renderElements()">
+        No stroke
+      </label>
+    </div>
+    <div class="prop-row">
+      <span class="prop-label">Width</span>
+      <input type="number" min="0" step="0.5" value="${el.strokeWidth || 0}" onchange="setProp('strokeWidth', parseFloat(this.value)); renderElements()">
+    </div>
+  </div>`;
 
-        <script>
-            // -- Configuration --
-            let generatedIds = [];
-            let locationName = "Loading...";
-            let hasPrinted = false;
+  // Border radius (rect)
+  if (el.type === 'rect') {
+    html += `<div class="prop-section">
+      <div class="prop-section-title">Border Radius</div>
+      <div class="prop-row">
+        <span class="prop-label">Radius</span>
+        <input type="number" min="0" value="${el.rx || 0}" onchange="setProp('rx', parseFloat(this.value)); renderElements()">
+      </div>
+    </div>`;
+  }
 
-            // -- 1. Initialization --
-            document.addEventListener("DOMContentLoaded", async () => {
-                const urlParams = new URLSearchParams(window.location.search);
-                const locationId = urlParams.get("locationID");
-                const statusEl = document.getElementById("status-text");
-                const btn = document.getElementById("action-btn");
-                const countInput = document.getElementById("card-count");
+  // Text properties
+  if (el.type === 'text') {
+    html += `<div class="prop-section">
+      <div class="prop-section-title">Text</div>
+      <div class="prop-row">
+        <span class="prop-label">Content</span>
+        <input type="text" value="${escXml(el.text || '')}" onchange="setProp('text', this.value); renderElements()">
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Size</span>
+        <input type="number" min="6" max="300" value="${el.fontSize || 16}" onchange="setProp('fontSize', parseFloat(this.value)); renderElements()">
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Font</span>
+        <select onchange="setProp('fontFamily', this.value); renderElements()">
+          ${['Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'Impact'].map(f =>
+            `<option value="${f}" ${el.fontFamily === f ? 'selected' : ''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Bold</span>
+        <input type="checkbox" ${el.fontWeight === 'bold' ? 'checked' : ''} onchange="setProp('fontWeight', this.checked ? 'bold' : 'normal'); renderElements()">
+      </div>
+    </div>`;
+  }
 
-                statusEl.style.display = "block";
+  // Delete button
+  html += `<div class="prop-section">
+    <button class="btn btn-danger" style="width:100%;" onclick="deleteSelected()">Delete Element</button>
+  </div>`;
 
-                if (!locationId) {
-                    statusEl.textContent = "Error: No locationId in URL.";
-                    btn.textContent = "Error";
-                    return;
-                }
+  panel.innerHTML = html;
+}
 
-                let credsInterval = setInterval(() => {
-                    if (window.fbInitialized) {
-                        clearInterval(credsInterval);
-                        try {
-                            // Fetch Subaccount Info
-                            locationName = await fetchLocationName(locationId);
+function setProp(prop, value) {
+  const el = state.elements.find(x => x.id === state.selected);
+  if (el) el[prop] = value;
+}
 
-                            // Generate Cards (Initial batch of 6)
-                            await generateCards(parseInt(countInput.value) || 6);
+function deleteSelected() {
+  if (!state.selected) return;
+  console.log('[Delete] element:', state.selected);
+  state.elements = state.elements.filter(x => x.id !== state.selected);
+  state.selected = null;
+  renderElements();
+  updatePropertiesPanel();
+}
 
-                            // Enable Print
-                            statusEl.style.display = "none";
-                            btn.textContent = "Print";
-                            btn.disabled = false;
+// ══════════════════════════════════════════════════════════════════
+// TEXT EDITING
+// ══════════════════════════════════════════════════════════════════
+function startTextEdit(el) {
+  const overlay = document.getElementById('text-edit-overlay');
+  const input = document.getElementById('text-edit-input');
+  const svg = document.getElementById('card-svg');
+  const sc = getScale();
+  const svgRect = svg.getBoundingClientRect();
 
-                            // Add listener to regenerate when number changes
-                            countInput.addEventListener("change", async (e) => {
-                                const val = parseInt(e.target.value);
-                                if (val > 0) {
-                                    btn.disabled = true;
-                                    btn.textContent = "Generating...";
-                                    await generateCards(val);
-                                    btn.textContent = "Print";
-                                    btn.disabled = false;
-                                }
-                            });
-                        } catch (err) {
-                            console.error(err);
-                            statusEl.textContent = "Error: " + err.message;
-                            btn.textContent = "Error";
-                        }
-                    }
-                }, 200);
-            });
+  overlay.style.display = 'block';
+  input.style.left = (svgRect.left + el.x * sc) + 'px';
+  input.style.top = (svgRect.top + el.y * sc) + 'px';
+  input.style.fontSize = ((el.fontSize || 16) * sc) + 'px';
+  input.style.fontFamily = el.fontFamily || 'Arial';
+  input.style.fontWeight = el.fontWeight || 'normal';
+  input.style.color = el.fill === 'none' ? '#000' : (el.fill || '#000');
+  input.value = el.text || '';
 
-            // -- 2. API Logic --
-            async function fetchLocationName(locationId) {
-                while (!window.GlobalLocationAccessKey) {
-                    await new Promise((resolve) => setTimeout(resolve, 100));
-                }
+  input.oninput = () => {
+    setProp('text', input.value);
+    renderElements();
+  };
 
-                const token = window.GlobalLocationAccessKey;
+  input.onblur = () => {
+    overlay.style.display = 'none';
+    updatePropertiesPanel();
+  };
 
-                const response = await fetch(
-                    `https://services.leadconnectorhq.com/locations/${locationId}`,
-                    {
-                        method: "GET",
-                        headers: {
-                            Accept: "application/json",
-                            Version: "2021-07-28",
-                            Authorization: `Bearer ${token}`,
-                        },
-                    },
-                );
+  input.onkeydown = e => {
+    if (e.key === 'Escape' || e.key === 'Enter') input.blur();
+  };
 
-                if (!response.ok)
-                    throw new Error("Failed to fetch location data");
+  input.focus();
+  input.select();
+  console.log('[Text] edit started for:', el.id);
+}
 
-                const data = await response.json();
-                return data.location
-                    ? data.location.name || data.location.businessName
-                    : "Unknown School";
-            }
+document.getElementById('text-edit-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) document.getElementById('text-edit-input').blur();
+});
 
-            // -- 3. Hashing & Uniqueness Logic --
-            function hash(input) {
-                const outputDomain =
-                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-                const magic = "jsHashSeed";
+// ══════════════════════════════════════════════════════════════════
+// CARD SIZE
+// ══════════════════════════════════════════════════════════════════
+function setCardSize(size) {
+  size = parseInt(size);
+  state.cardSize = size;
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.size) === size));
+  const dims = CARD_DIMS[size];
+  const svg = document.getElementById('card-svg');
+  svg.setAttribute('viewBox', `0 0 ${dims.w} ${dims.h}`);
+  document.getElementById('card-bg').setAttribute('width', dims.w);
+  document.getElementById('card-bg').setAttribute('height', dims.h);
+  updateQrPlaceholder(dims);
+  fitCanvas();
+  renderElements();
+  console.log('[CardSize] switched to:', size, dims);
+}
 
-                let ac1 = 0;
-                let ac2 = 0;
+function updateQrPlaceholder(dims) {
+  const QR = 70, M = 10;
+  const qx = dims.w - QR - M;
+  const qy = M;
+  const bg  = document.getElementById('qr-bg');
+  const img = document.getElementById('qr-img');
+  const lbl = document.getElementById('qr-label');
 
-                let s = String(input) + typeof input + magic;
+  bg.setAttribute('x', qx - 4);
+  bg.setAttribute('y', qy - 4);
+  bg.setAttribute('width', QR + 8);
+  bg.setAttribute('height', QR + 16);
 
-                for (let i = 0; i < s.length; i++) {
-                    ac1 = (ac1 << 5) - ac1 + s.charCodeAt(i);
-                    ac2 = (ac2 << 5) - ac2 + s.charCodeAt(s.length - 1 - i);
-                    ac1 |= 0;
-                    ac2 |= 0;
-                }
+  img.setAttribute('x', qx);
+  img.setAttribute('y', qy);
+  img.setAttribute('width', QR);
+  img.setAttribute('height', QR);
 
-                let result = "";
-                for (let i = 0; i < 8; i++) {
-                    let mixed = ac1 ^ (ac2 + i);
-                    mixed ^= mixed >>> 17;
-                    mixed ^= mixed >>> 8;
-                    const index = Math.abs(mixed) % outputDomain.length;
-                    result += outputDomain[index];
-                    ac1 = ((ac1 << 3) - ac1) ^ ac2;
-                    ac1 |= 0;
-                    ac2 = ((ac2 << 3) - ac2) ^ ac1;
-                    ac2 |= 0;
-                }
-                return result;
-            }
+  lbl.setAttribute('x', qx + QR / 2);
+  lbl.setAttribute('y', qy + QR + 10);
+  lbl.setAttribute('font-size', 7);
+  lbl.textContent = 'XR••••••••••••';
+}
 
-            function getUniqueId() {
-                // Modified: removed Firestore check for speed on large batches
-                return hash(Math.random() + new Date().getTime());
-            }
+function fitCanvas() {
+  const container = document.getElementById('canvas-area');
+  const dims = CARD_DIMS[state.cardSize];
+  zoom = Math.min((container.clientWidth - 80) / dims.w, (container.clientHeight - 80) / dims.h, 2.0);
+  applyZoom();
+}
 
-            // -- 4. DOM Generation --
-            async function generateCards(count) {
-                const wrapper = document.getElementById("sheets-wrapper");
-                wrapper.innerHTML = "";
-                generatedIds = []; // Reset list
+function applyZoom() {
+  const dims = CARD_DIMS[state.cardSize];
+  const svg = document.getElementById('card-svg');
+  svg.style.width  = Math.round(dims.w * zoom) + 'px';
+  svg.style.height = Math.round(dims.h * zoom) + 'px';
+  document.getElementById('zoom-label').textContent = Math.round(zoom * 100) + '%';
+}
 
-                let currentSheet = null;
+function adjustZoom(delta) {
+  zoom = Math.max(0.1, Math.min(4.0, zoom + delta));
+  applyZoom();
+}
 
-                for (let i = 0; i < count; i++) {
-                    // Create a new sheet every 6 cards
-                    if (i % 6 === 0) {
-                        currentSheet = document.createElement("div");
-                        currentSheet.className = "sheet";
-                        wrapper.appendChild(currentSheet);
-                    }
+document.getElementById('canvas-area').addEventListener('wheel', e => {
+  e.preventDefault();
+  adjustZoom(e.deltaY < 0 ? 0.1 : -0.1);
+}, { passive: false });
 
-                    const uniqueID = getUniqueId();
-                    generatedIds.push(uniqueID);
+window.addEventListener('resize', fitCanvas);
 
-                    // Card container
-                    const cardDiv = document.createElement("div");
-                    cardDiv.className = "card";
+// ══════════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ══════════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
-                    cardDiv.innerHTML = `
-                        <div class="header">
-                            <div class="logo-section">
-                                <img src="https://kairoscloud.github.io/main/Assets/lax0ZXTk.png" class="logo-img" alt="Kairos Cloud">
-                                <div class="sub-text">${locationName} | School Contact Form</div>
-                            </div>
-                            <div class="qr-section">
-                                <div id="qr-${uniqueID}" class="qr-code-container"></div>
-                                <div class="id-label">ID_${uniqueID}</div>
-                            </div>
-                        </div>
-                        <div class="form-area">
-                            <div class="form-line">
-                                <span class="label">Name</span>
-                                <div class="line"></div>
-                            </div>
-                            <div class="form-line">
-                                <span class="label">Phone</span>
-                                <div class="line"></div>
-                            </div>
-                            <div class="form-line">
-                                <span class="label">Email</span>
-                                <div class="line"></div>
-                            </div>
-                        </div>
-                    `;
+  const map = { v: 'select', t: 'text', r: 'rect', c: 'circle', l: 'line', i: 'image' };
+  if (map[e.key]) { setTool(map[e.key]); return; }
 
-                    currentSheet.appendChild(cardDiv);
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) {
+    deleteSelected();
+    e.preventDefault();
+  }
+  if (e.key === 'Escape') {
+    selectElement(null);
+    setTool('select');
+  }
 
-                    // Generate QR Code Client-Side
-                    // We must wait for the element to be in the DOM (it is, via appendChild)
-                    new QRCode(document.getElementById(`qr-${uniqueID}`), {
-                        text: `https://sites.kairoscloud.io/f/${uniqueID}`,
-                        width: 80,
-                        height: 80,
-                        colorDark: "#000000",
-                        colorLight: "#ffffff",
-                        correctLevel: QRCode.CorrectLevel.L,
-                    });
-                }
-            }
+  // Arrow nudge
+  if (state.selected && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+    const el = state.elements.find(x => x.id === state.selected);
+    if (el) {
+      const d = e.shiftKey ? 10 : 1;
+      if (e.key === 'ArrowLeft')  el.x -= d;
+      if (e.key === 'ArrowRight') el.x += d;
+      if (e.key === 'ArrowUp')    el.y -= d;
+      if (e.key === 'ArrowDown')  el.y += d;
+      renderElements();
+      updatePropertiesPanel();
+      e.preventDefault();
+    }
+  }
+});
 
-            // -- 5. Printing & Saving --
-            function handleAction() {
-                if (hasPrinted) {
-                    // If already printed, refresh the page to start over
-                    window.location.reload();
-                } else {
-                    // Trigger print
-                    window.print();
-                }
-            }
+// ══════════════════════════════════════════════════════════════════
+// IMAGE UPLOAD
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('image-file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  console.log('[Image] uploading:', file.name);
 
-            // Listen for afterprint event to save to Firebase
-            window.addEventListener("afterprint", async (event) => {
-                const statusEl = document.getElementById("status-text");
-                const btn = document.getElementById("action-btn");
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const dims = CARD_DIMS[state.cardSize];
+      const maxW = dims.w * 0.5;
+      const ratio = img.width / img.height;
+      const w = Math.min(maxW, img.width);
+      const h = w / ratio;
+      const id = 'el_img_' + Date.now();
+      const newEl = {
+        id, type: 'image',
+        x: 20, y: 20, w, h,
+        href: ev.target.result,
+        fill: 'none', stroke: 'none', strokeWidth: 0,
+      };
+      state.elements.push(newEl);
+      selectElement(id);
+      renderElements();
+      console.log('[Image] added element:', id, `${Math.round(w)}×${Math.round(h)}`);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+  setTool('select');
+});
 
-                statusEl.style.display = "block";
-                statusEl.textContent = "Saving records...";
-                btn.disabled = true;
+// ══════════════════════════════════════════════════════════════════
+// TEMPLATE MANAGEMENT
+// ══════════════════════════════════════════════════════════════════
+async function loadTemplates() {
+  if (!state.locationId) {
+    console.warn('[Templates] No locationId, skipping load');
+    document.getElementById('templates-list').innerHTML = '<div class="prop-empty">Add ?locationID= to URL to load templates.</div>';
+    return;
+  }
+  console.log('[Templates] Loading for locationId:', state.locationId);
+  try {
+    const snap = await window.firestore
+      .collection('ocr_templates').doc(state.locationId)
+      .collection('cards').orderBy('createdAt', 'desc').get();
+    state.templates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    console.log('[Templates] Loaded', state.templates.length, 'templates');
+    renderTemplateList();
+  } catch (err) {
+    console.error('[Templates] Load error:', err);
+    document.getElementById('templates-list').innerHTML = `<div class="prop-empty">Error loading templates:<br>${err.message}</div>`;
+  }
+}
 
-                try {
-                    const locationParam = new URLSearchParams(
-                        window.location.search,
-                    ).get("locationID");
+function renderTemplateList() {
+  const list = document.getElementById('templates-list');
+  if (state.templates.length === 0) {
+    list.innerHTML = '<div class="prop-empty">No templates yet.<br>Click + New to create one.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const tmpl of state.templates) {
+    const item = document.createElement('div');
+    item.className = 'template-item' + (state.templateId === tmpl.id ? ' active' : '');
+    item.innerHTML = `
+      <div style="flex-shrink:0; color:#4981BE;">${getSizeIconSvg(tmpl.cardSize || 6)}</div>
+      <div class="template-item-info">
+        <div class="template-item-name">${escXml(tmpl.name || 'Untitled')}</div>
+        <div class="template-item-meta">${CARD_DIMS[tmpl.cardSize]?.label || '?'} · ${(tmpl.elements || []).length} elements</div>
+      </div>
+      <button class="template-delete-btn" data-id="${tmpl.id}" title="Delete template">✕</button>
+    `;
+    item.addEventListener('click', () => loadTemplate(tmpl));
+    item.querySelector('.template-delete-btn').addEventListener('click', ev => {
+      ev.stopPropagation();
+      deleteTemplate(tmpl.id);
+    });
+    list.appendChild(item);
+  }
+}
 
-                    // Process in batches of 500 (Firestore batch limit)
-                    const chunks = [];
-                    for (let i = 0; i < generatedIds.length; i += 400) {
-                        chunks.push(generatedIds.slice(i, i + 400));
-                    }
+function getSizeIconSvg(size) {
+  const icons = {
+    6: `<svg width="18" height="14" viewBox="0 0 28 22"><rect x=".75" y=".75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="15.75" y=".75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x=".75" y="8.25" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="15.75" y="8.25" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x=".75" y="15.75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="15.75" y="15.75" width="11.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`,
+    4: `<svg width="18" height="14" viewBox="0 0 28 22"><rect x=".75" y=".75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="15.75" y=".75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x=".75" y="11.75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="15.75" y="11.75" width="11.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`,
+    3: `<svg width="18" height="14" viewBox="0 0 28 22"><rect x=".75" y=".75" width="26.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x=".75" y="8.25" width="26.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x=".75" y="15.75" width="26.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`,
+    2: `<svg width="18" height="14" viewBox="0 0 28 22"><rect x=".75" y=".75" width="26.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x=".75" y="11.75" width="26.5" height="9.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`,
+    1: `<svg width="18" height="14" viewBox="0 0 28 22"><rect x=".75" y=".75" width="26.5" height="20.5" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>`,
+  };
+  return icons[size] || icons[6];
+}
 
-                    for (const chunk of chunks) {
-                        const batch = firestore.batch();
-                        chunk.forEach((id) => {
-                            const docRef = firestore
-                                .collection("cards")
-                                .doc(id);
-                            batch.set(docRef, {
-                                locationID: locationParam,
-                            });
-                        });
-                        await batch.commit();
-                    }
+async function saveTemplate() {
+  if (!state.locationId) { alert('No locationID in URL. Add ?locationID=... to the URL.'); return; }
+  const name = document.getElementById('template-name-input').value.trim() || 'Untitled';
+  const templateId = state.templateId || window.firestore.collection('_').doc().id;
+  const isNew = !state.templateId;
 
-                    // Update UI state
-                    statusEl.textContent = `Saved ${generatedIds.length} cards successfully!`;
-                    setTimeout(() => {
-                        statusEl.style.display = "none";
-                    }, 3000);
+  const data = {
+    name,
+    cardSize: state.cardSize,
+    elements: state.elements,
+    updatedAt: Date.now(),
+    ...(isNew ? { createdAt: Date.now() } : {}),
+  };
 
-                    hasPrinted = true;
-                    btn.textContent = "Print More";
-                    btn.disabled = false;
-                } catch (error) {
-                    console.error("Error saving to firestore:", error);
-                    statusEl.textContent = "Error saving records.";
-                    btn.disabled = false;
-                }
-            });
-        </script>
-    </body>
+  console.log('[Templates] Saving template:', templateId, { name, cardSize: state.cardSize, elementCount: state.elements.length });
+  try {
+    await window.firestore
+      .collection('ocr_templates').doc(state.locationId)
+      .collection('cards').doc(templateId)
+      .set(data, { merge: true });
+
+    state.templateId = templateId;
+    state.templateName = name;
+    console.log('[Templates] Saved successfully:', templateId);
+    await loadTemplates();
+    showToast('Template saved!');
+  } catch (err) {
+    console.error('[Templates] Save error:', err);
+    alert('Error saving template: ' + err.message);
+  }
+}
+
+function loadTemplate(tmpl) {
+  state.templateId = tmpl.id;
+  state.templateName = tmpl.name || 'Untitled';
+  state.elements = (tmpl.elements || []).map(el => ({ ...el }));
+  state.selected = null;
+  document.getElementById('template-name-input').value = state.templateName;
+  setCardSize(tmpl.cardSize || 6);
+  renderElements();
+  updatePropertiesPanel();
+  renderTemplateList();
+  console.log('[Templates] Loaded:', tmpl.id, tmpl.name, 'elements:', state.elements.length);
+}
+
+async function deleteTemplate(id) {
+  if (!confirm('Delete this template? This cannot be undone.')) return;
+  console.log('[Templates] Deleting:', id);
+  try {
+    await window.firestore
+      .collection('ocr_templates').doc(state.locationId)
+      .collection('cards').doc(id).delete();
+    if (state.templateId === id) newTemplate();
+    await loadTemplates();
+    showToast('Template deleted.');
+    console.log('[Templates] Deleted:', id);
+  } catch (err) {
+    console.error('[Templates] Delete error:', err);
+    alert('Error deleting: ' + err.message);
+  }
+}
+
+function newTemplate() {
+  state.templateId = null;
+  state.templateName = 'New Template';
+  state.elements = [];
+  state.selected = null;
+  document.getElementById('template-name-input').value = 'New Template';
+  setCardSize(6);
+  renderElements();
+  updatePropertiesPanel();
+  renderTemplateList();
+  console.log('[Templates] New template started');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PRINT FLOW
+// ══════════════════════════════════════════════════════════════════
+function openPrintDialog() {
+  document.getElementById('print-modal').classList.add('open');
+  document.getElementById('print-modal-status').textContent = '';
+  updatePrintPages();
+  console.log('[Print] Dialog opened');
+}
+
+function updatePrintPages() {
+  const count = parseInt(document.getElementById('print-count').value) || 0;
+  const pages = Math.ceil(count / state.cardSize);
+  document.getElementById('print-pages-info').textContent =
+    pages + ' page' + (pages !== 1 ? 's' : '');
+}
+
+function closePrintDialog() {
+  document.getElementById('print-modal').classList.remove('open');
+}
+
+async function generateAndPrint() {
+  const count = parseInt(document.getElementById('print-count').value) || 6;
+  if (count < 1 || count > 1000) { alert('Enter between 1 and 1000 cards.'); return; }
+
+  const btn = document.getElementById('generate-print-btn');
+  const status = document.getElementById('print-modal-status');
+  btn.disabled = true;
+
+  try {
+    status.textContent = 'Generating IDs…';
+    const ids = Array.from({ length: count }, generateId);
+    console.log('[Print] Generated', count, 'IDs');
+
+    status.textContent = `Generating QR codes (0/${count})…`;
+    const qrDataUrls = [];
+    for (let i = 0; i < ids.length; i++) {
+      const url = `https://sites.kairoscloud.io/f/${ids[i]}`;
+      qrDataUrls.push(await generateQrDataUrl(url));
+      if ((i + 1) % 5 === 0 || i === ids.length - 1) {
+        status.textContent = `Generating QR codes (${i+1}/${count})…`;
+      }
+    }
+    console.log('[Print] QR codes generated');
+
+    if (state.locationId) {
+      status.textContent = 'Saving to Firebase…';
+      for (let i = 0; i < ids.length; i += 400) {
+        const chunk = ids.slice(i, i + 400);
+        const batch = window.firestore.batch();
+        chunk.forEach(id => {
+          const ref = window.firestore.collection('cards').doc(id);
+          batch.set(ref, { locationID: state.locationId, createdAt: Date.now(), printed: true });
+        });
+        await batch.commit();
+      }
+      console.log('[Print] Saved', ids.length, 'card IDs to Firebase');
+    } else {
+      console.warn('[Print] No locationId, skipping Firebase save');
+    }
+
+    status.textContent = 'Opening print window…';
+    const html = buildPrintHtml(ids, qrDataUrls);
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+
+    closePrintDialog();
+    console.log('[Print] Print window opened');
+  } catch (err) {
+    console.error('[Print] Error:', err);
+    status.textContent = 'Error: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function buildCutLinesSvg(cols, rows) {
+  if (cols === 1 && rows === 1) return '';
+  // Page is 816×1056 px at 96dpi (8.5×11in)
+  const PW = 816, PH = 1056;
+  const cardW = PW / cols, cardH = PH / rows;
+  let lines = '';
+  for (let c = 1; c < cols; c++) {
+    const x = c * cardW;
+    lines += `<line x1="${x}" y1="0" x2="${x}" y2="${PH}" stroke="#bbb" stroke-width="1" stroke-dasharray="6,6"/>`;
+  }
+  for (let r = 1; r < rows; r++) {
+    const y = r * cardH;
+    lines += `<line x1="0" y1="${y}" x2="${PW}" y2="${y}" stroke="#bbb" stroke-width="1" stroke-dasharray="6,6"/>`;
+  }
+  return `<svg style="position:absolute;top:0;left:0;width:8.5in;height:11in;pointer-events:none;" viewBox="0 0 ${PW} ${PH}" xmlns="http://www.w3.org/2000/svg">${lines}</svg>`;
+}
+
+function buildPrintHtml(ids, qrDataUrls) {
+  const dims = CARD_DIMS[state.cardSize];
+  const { w: cw, h: ch, cols, rows } = dims;
+  const cardsPerPage = cols * rows;
+  const wIn = (cw / 96).toFixed(4);
+  const hIn = (ch / 96).toFixed(4);
+  const QR = 70, M = 10;
+  const qrX = cw - QR - M, qrY = M;
+
+  const cardHtmls = ids.map((id, i) => {
+    const elSvg = state.elements.map(elementToSvgString).join('\n');
+    return `
+      <div class="card-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${cw} ${ch}" width="${wIn}in" height="${hIn}in" style="display:block; overflow:hidden;">
+          <rect width="${cw}" height="${ch}" fill="white"/>
+          ${elSvg}
+          <rect x="${qrX-4}" y="${qrY-4}" width="${QR+8}" height="${QR+30}" fill="#f6f8fa" rx="3"/>
+          <image href="${qrDataUrls[i]}" x="${qrX}" y="${qrY}" width="${QR}" height="${QR}" preserveAspectRatio="xMidYMid meet"/>
+          <text x="${qrX + QR/2}" y="${qrY + QR + 12}" text-anchor="middle" font-family="monospace" font-size="8" font-weight="bold" fill="#222">XR${id}</text>
+        </svg>
+      </div>`;
+  });
+
+  const cutLines = buildCutLinesSvg(cols, rows);
+
+  let pagesHtml = '';
+  for (let p = 0; p * cardsPerPage < ids.length; p++) {
+    const slice = cardHtmls.slice(p * cardsPerPage, (p + 1) * cardsPerPage);
+    pagesHtml += `<div class="sheet" style="position:relative; display:grid; grid-template-columns:repeat(${cols},1fr); grid-template-rows:repeat(${rows},1fr);">${slice.join('')}${cutLines}</div>`;
+  }
+
+  return `<!doctype html><html><head>
+<meta charset="UTF-8"><title>Contact Cards | Kairos Cloud</title>
+<style>
+  @page { size: letter portrait; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: white; }
+  .sheet { width: 8.5in; height: 11in; overflow: hidden; break-after: page; page-break-after: always; }
+  .sheet:last-child { break-after: auto; page-break-after: auto; }
+  .card-wrap { overflow: hidden; display: block; }
+</style>
+</head><body>
+${pagesHtml}
+<script>window.addEventListener('load', () => setTimeout(() => window.print(), 600));<\/script>
+</body></html>`;
+}
+
+function elementToSvgString(el) {
+  switch (el.type) {
+    case 'rect':
+      return `<rect x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" fill="${el.fill||'none'}" stroke="${el.stroke||'none'}" stroke-width="${el.strokeWidth||0}" rx="${el.rx||0}"/>`;
+    case 'circle':
+      return `<ellipse cx="${el.x + el.w/2}" cy="${el.y + el.h/2}" rx="${el.w/2}" ry="${el.h/2}" fill="${el.fill||'none'}" stroke="${el.stroke||'none'}" stroke-width="${el.strokeWidth||0}"/>`;
+    case 'line':
+      return `<line x1="${el.x}" y1="${el.y}" x2="${el.x+el.w}" y2="${el.y}" stroke="${el.stroke||'#000'}" stroke-width="${el.strokeWidth||1}" stroke-linecap="round"/>`;
+    case 'text':
+      return `<text x="${el.x}" y="${el.y+(el.fontSize||16)}" fill="${el.fill||'#000'}" font-size="${el.fontSize||16}" font-family="${el.fontFamily||'Arial'}" font-weight="${el.fontWeight||'normal'}">${escXml(el.text||'Text')}</text>`;
+    case 'image':
+      return `<image href="${el.href||''}" x="${el.x}" y="${el.y}" width="${el.w}" height="${el.h}" preserveAspectRatio="xMidYMid meet"/>`;
+    default: return '';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// QR CODE GENERATION
+// ══════════════════════════════════════════════════════════════════
+function generateQrDataUrl(text) {
+  return new Promise(resolve => {
+    const div = document.createElement('div');
+    div.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:80px;height:80px;';
+    document.body.appendChild(div);
+    new QRCode(div, {
+      text,
+      width: 80, height: 80,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.L,
+    });
+    setTimeout(() => {
+      const canvas = div.querySelector('canvas');
+      const img = div.querySelector('img');
+      const dataUrl = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+      document.body.removeChild(div);
+      resolve(dataUrl);
+    }, 150);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.style.opacity = '0', 2500);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// INITIALIZATION
+// ══════════════════════════════════════════════════════════════════
+async function init() {
+  console.log('[Init] Card Designer starting…');
+
+  const urlParams = new URLSearchParams(window.location.search);
+  state.locationId = urlParams.get('locationID');
+  console.log('[Init] locationId:', state.locationId);
+
+  // Initial canvas setup
+  setCardSize(6);
+  updatePropertiesPanel();
+
+  // Wait for Firebase
+  const fbInterval = setInterval(async () => {
+    if (window.fbInitialized && window.firestore) {
+      clearInterval(fbInterval);
+      console.log('[Init] Firebase ready');
+
+      // Fetch location name
+      if (state.locationId && window.GlobalLocationAccessKey) {
+        try {
+          const resp = await fetch(`https://services.leadconnectorhq.com/locations/${state.locationId}`, {
+            headers: {
+              Authorization: `Bearer ${window.GlobalLocationAccessKey}`,
+              Version: '2021-07-28',
+              Accept: 'application/json',
+            },
+          });
+          const data = await resp.json();
+          state.locationName = data.location?.name || data.location?.businessName || 'School';
+          console.log('[Init] Location name:', state.locationName);
+        } catch (err) {
+          console.warn('[Init] Could not fetch location name:', err.message);
+        }
+      }
+
+      // Generate placeholder QR for editor preview
+      try {
+        const sampleUrl = 'https://sites.kairoscloud.io/f/SAMPLE';
+        const qrDataUrl = await generateQrDataUrl(sampleUrl);
+        document.getElementById('qr-img').setAttribute('href', qrDataUrl);
+        console.log('[Init] Sample QR generated for editor preview');
+      } catch (err) {
+        console.warn('[Init] Could not generate sample QR:', err.message);
+      }
+
+      await loadTemplates();
+      console.log('[Init] Ready');
+    }
+  }, 200);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
 </html>

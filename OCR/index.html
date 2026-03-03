@@ -1,895 +1,1550 @@
+<!--
+  OCR Contact Card Scanner
+  Scans printed contact cards via uploaded images/PDFs or webcam.
+  Uses Google Cloud Vision for OCR, Gemini AI to structure data.
+  Fetches location's custom fields from GHL API.
+  Validates and upserts contacts via GHL API / saves to Firebase.
+
+  URL params: ?locationID=<id>
+  Auth: window.GlobalLocationAccessKey (from globalFirebase.js)
+-->
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>OCR Demo - Multi-Card & PDF</title>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card Scanner | Kairos Cloud</title>
+  <link rel="icon" href="http://kairoscloud.github.io/main/Assets/favicon.png">
 
-        <!-- Firebase Dependencies -->
-        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
-        <!-- Custom Global Firebase Init Script -->
-        <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+  <script src="https://kairoscloud.github.io/main/globalFirebase.js?v3"></script>
 
-        <!-- JWT Library for Google Auth -->
-        <script src="https://kjur.github.io/jsrsasign/jsrsasign-all-min.js"></script>
+  <!-- JWT for Vision API auth -->
+  <script src="https://kjur.github.io/jsrsasign/jsrsasign-all-min.js"></script>
 
-        <!-- PDF.js for PDF Rendering -->
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-        <script>
-            pdfjsLib.GlobalWorkerOptions.workerSrc =
-                "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-        </script>
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
 
-        <style>
-            * {
-                box-sizing: border-box;
-            }
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-            html,
-            body {
-                margin: 0;
-                padding: 0;
-                height: 100%;
-                width: 100%;
-                overflow: hidden;
-                font-family:
-                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                    Helvetica, Arial, sans-serif;
-                background-color: #121212;
-                color: #e0e0e0;
-            }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-            .container {
-                display: flex;
-                width: 100vw;
-                height: 100vh;
-            }
+    html, body {
+      height: 100%;
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      font-size: 13px;
+    }
 
-            .panel {
-                flex: 1;
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-            }
+    /* ── LAYOUT ──────────────────────────────────── */
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
 
-            #left-panel {
-                position: relative;
-                background-color: #000;
-                border-right: 1px solid #333;
-                align-items: center;
-                justify-content: center;
-            }
+    /* Left panel: upload/camera */
+    #left-panel {
+      width: 340px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: #0d1117;
+      border-right: 1px solid #30363d;
+      overflow: hidden;
+    }
 
-            #right-panel {
-                background-color: #1e1e1e;
-                padding: 30px;
-                overflow-y: auto;
-            }
+    /* Right panel: form data */
+    #right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #161b22;
+    }
 
-            #camera-view {
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                position: absolute;
-                top: 0;
-                left: 0;
-                z-index: 1;
-            }
+    /* ── LEFT PANEL ───────────────────────────────── */
+    #camera-wrap {
+      flex: 1;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+    }
 
-            /* Controls Overlay */
-            .controls-overlay {
-                position: absolute;
-                bottom: 30px;
-                left: 50%;
-                transform: translateX(-50%);
-                display: flex;
-                gap: 15px;
-                z-index: 10;
-                width: 90%;
-                justify-content: center;
-                flex-wrap: wrap;
-            }
+    #camera-view {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
 
-            .btn {
-                padding: 12px 24px;
-                font-size: 16px;
-                font-weight: bold;
-                color: #fff;
-                border: none;
-                border-radius: 50px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-            }
+    #upload-drop-zone {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #upload-drop-zone.active, #upload-drop-zone:hover { background: rgba(88,166,255,0.12); }
+    #upload-drop-zone svg { color: #58a6ff; opacity: 0.8; }
+    #upload-drop-zone p { color: #8b949e; font-size: 13px; text-align: center; line-height: 1.5; }
+    #upload-drop-zone strong { color: #58a6ff; }
 
-            #capture-btn {
-                background-color: rgba(26, 115, 232, 0.9);
-            }
-            #capture-btn:hover {
-                background-color: rgba(26, 115, 232, 1);
-            }
+    #left-controls {
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
 
-            /* File Upload Styling */
-            .file-upload-wrapper {
-                position: relative;
-                overflow: hidden;
-                display: inline-block;
-            }
-            .file-upload-wrapper input[type="file"] {
-                font-size: 100px;
-                position: absolute;
-                left: 0;
-                top: 0;
-                opacity: 0;
-                cursor: pointer;
-            }
-            #upload-btn {
-                background-color: rgba(255, 152, 0, 0.9);
-            }
-            #upload-btn:hover {
-                background-color: rgba(255, 152, 0, 1);
-            }
+    .ctrl-row { display: flex; gap: 8px; }
 
-            .btn:disabled {
-                background-color: #5f6368 !important; /* Force override for validation state */
-                cursor: not-allowed;
-                opacity: 0.7;
-            }
+    .btn { border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; padding: 9px 14px; transition: all 0.15s; display: flex; align-items: center; gap: 6px; justify-content: center; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+    .btn-primary { background: #238636; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2ea043; }
+    .btn-upload { background: #1f3c5e; color: #58a6ff; border: 1px solid #30363d; flex: 1; }
+    .btn-upload:hover:not(:disabled) { background: #254966; }
+    .btn-capture { background: #1a1a2e; color: #e6edf3; border: 1px solid #30363d; flex: 1; }
+    .btn-capture:hover:not(:disabled) { background: #2a2a3e; }
+    .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+    .btn-secondary:hover:not(:disabled) { background: #30363d; }
+    .btn-danger { background: #b91c1c; color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-save-all { background: #238636; color: #fff; width: 100%; padding: 12px; font-size: 14px; font-weight: 600; }
+    .btn-save-all:hover:not(:disabled) { background: #2ea043; }
 
-            /* Form Styles */
-            h2 {
-                margin-top: 0;
-                color: #fff;
-                margin-bottom: 20px;
-                border-bottom: 1px solid #333;
-                padding-bottom: 10px;
-            }
+    #file-input { display: none; }
 
-            /* Card Item Container - Updated for Side-by-Side */
-            .card-entry {
-                background-color: #252525;
-                border: 1px solid #333;
-                border-radius: 8px;
-                padding: 20px;
-                margin-bottom: 25px;
-                position: relative;
-                display: flex; /* Flexbox for side-by-side */
-                flex-wrap: wrap; /* Wrap on small screens */
-                gap: 20px;
-            }
+    /* Status bar */
+    #status-bar {
+      padding: 8px 14px;
+      font-size: 12px;
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-idle { color: #6e7681; }
+    .status-processing { color: #58a6ff; }
+    .status-success { color: #3fb950; }
+    .status-error { color: #f85149; }
 
-            .card-entry-header {
-                position: absolute;
-                top: 0;
-                right: 0;
-                background: #333;
-                padding: 5px 10px;
-                font-size: 12px;
-                border-bottom-left-radius: 8px;
-                border-top-right-radius: 8px;
-                color: #aaa;
-                z-index: 5;
-            }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid #30363d;
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-            .card-image-col {
-                flex: 1;
-                min-width: 200px;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-            }
+    /* ── RIGHT PANEL ──────────────────────────────── */
+    #right-header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    #right-header h2 { font-size: 16px; font-weight: 600; flex: 1; }
 
-            .card-image-col img {
-                width: 100%;
-                height: auto;
-                border-radius: 4px;
-                border: 1px solid #444;
-                object-fit: contain;
-                max-height: 300px;
-                background: #000;
-            }
+    #cards-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+    }
 
-            .card-form-col {
-                flex: 2;
-                min-width: 250px;
-            }
+    .placeholder-msg {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: #6e7681;
+      text-align: center;
+    }
+    .placeholder-msg svg { opacity: 0.4; }
 
-            .form-group {
-                margin-bottom: 15px;
-            }
+    /* ── CARD ENTRY ───────────────────────────────── */
+    .card-entry {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
 
-            label {
-                display: block;
-                margin-bottom: 6px;
-                font-weight: 500;
-                color: #aaa;
-                font-size: 13px;
-            }
+    .card-entry-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+    }
+    .card-entry-header h3 { font-size: 13px; font-weight: 600; color: #8b949e; }
 
-            input[type="text"],
-            input[type="email"],
-            input[type="tel"] {
-                width: 100%;
-                padding: 10px;
-                background-color: #1a1a1a;
-                border: 1px solid #444;
-                border-radius: 4px;
-                color: #fff;
-                font-size: 14px;
-                transition:
-                    border-color 0.3s,
-                    box-shadow 0.3s;
-            }
+    .card-entry-body {
+      display: flex;
+      gap: 0;
+    }
 
-            input:focus {
-                outline: none;
-                border-color: #2196f3;
-            }
+    /* Image column */
+    .card-img-col {
+      width: 220px;
+      flex-shrink: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-right: 1px solid #21262d;
+    }
+    .card-img-col img {
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      object-fit: contain;
+      max-height: 320px;
+      background: #000;
+      display: block;
+    }
+    .card-img-label {
+      font-size: 11px;
+      color: #6e7681;
+      text-align: center;
+    }
 
-            /* Validation Styling */
-            input.invalid {
-                border-color: #f44336 !important;
-                background-color: rgba(244, 67, 54, 0.1);
-            }
+    /* Form column */
+    .card-form-col {
+      flex: 1;
+      padding: 14px 16px;
+      overflow: hidden;
+    }
 
-            .checkbox-group {
-                display: flex;
-                align-items: center;
-                margin-bottom: 25px;
-                background: #2a2a2a;
-                padding: 10px;
-                border-radius: 6px;
-                border: 1px solid #444;
-            }
+    /* Form sections */
+    .form-section {
+      margin-bottom: 18px;
+    }
+    .form-section-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #8b949e;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #21262d;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 14px;
+    }
+    .form-grid.single { grid-template-columns: 1fr; }
+    .form-grid.triple { grid-template-columns: 1fr 1fr 1fr; }
 
-            .checkbox-group input {
-                margin-right: 10px;
-                width: 18px;
-                height: 18px;
-            }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .form-group label {
+      font-size: 11px;
+      font-weight: 500;
+      color: #8b949e;
+    }
+    .form-group .required-star { color: #f85149; }
 
-            .checkbox-group label {
-                margin-bottom: 0;
-                color: #fff;
-                cursor: pointer;
-            }
+    .form-group input[type="text"],
+    .form-group input[type="email"],
+    .form-group input[type="tel"],
+    .form-group input[type="date"],
+    .form-group input[type="url"],
+    .form-group select,
+    .form-group textarea {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      color: #e6edf3;
+      padding: 7px 9px;
+      font-size: 12px;
+      font-family: inherit;
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus { outline: none; border-color: #58a6ff; }
+    .form-group input.invalid { border-color: #f85149 !important; background: rgba(248,81,73,0.08); }
+    .form-group input.valid { border-color: #3fb950; }
 
-            #save-all-btn {
-                width: 100%;
-                padding: 15px;
-                background-color: #4caf50;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 16px;
-                font-weight: bold;
-                cursor: pointer;
-                transition: background-color 0.2s;
-                margin-bottom: 10px;
-            }
+    .form-group select option { background: #21262d; }
+    .form-group textarea { resize: vertical; min-height: 50px; }
 
-            #save-all-btn:hover {
-                background-color: #43a047;
-            }
+    .field-hint { font-size: 10px; color: #6e7681; margin-top: 2px; }
+    .field-error { font-size: 10px; color: #f85149; margin-top: 2px; }
 
-            #save-all-btn:disabled {
-                background-color: #555;
-                cursor: not-allowed;
-            }
+    /* Tags input */
+    .tags-container {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      padding: 5px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      cursor: text;
+      min-height: 36px;
+    }
+    .tags-container:focus-within { border-color: #58a6ff; }
+    .tag-chip {
+      background: #1f3c5e;
+      color: #58a6ff;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tag-chip button {
+      background: none; border: none; color: #8b949e; cursor: pointer; font-size: 12px; padding: 0; line-height: 1;
+    }
+    .tag-chip button:hover { color: #f85149; }
+    .tags-input {
+      flex: 1;
+      min-width: 80px;
+      background: none;
+      border: none;
+      color: #e6edf3;
+      font-size: 12px;
+      padding: 2px 4px;
+      outline: none;
+    }
 
-            .status-msg {
-                margin-top: 15px;
-                padding: 10px;
-                border-radius: 4px;
-                text-align: center;
-                display: none;
-                white-space: pre-wrap; /* allow multiline errors */
-            }
-            .status-success {
-                background-color: rgba(76, 175, 80, 0.2);
-                color: #81c784;
-            }
-            .status-error {
-                background-color: rgba(244, 67, 54, 0.2);
-                color: #e57373;
-            }
+    /* Custom fields */
+    .custom-field-group { display: flex; flex-direction: column; gap: 4px; }
+    .custom-field-label { font-size: 11px; font-weight: 500; color: #8b949e; }
+    .custom-field-key { font-size: 10px; color: #6e7681; }
 
-            #cards-container {
-                margin-bottom: 20px;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="panel" id="left-panel">
-                <video id="camera-view" autoplay playsinline></video>
+    /* DND checkbox */
+    .dnd-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+    }
+    .dnd-row input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: #58a6ff; }
+    .dnd-row label { cursor: pointer; color: #e6edf3; font-size: 12px; }
 
-                <div class="controls-overlay">
-                    <button id="capture-btn" class="btn">Capture Camera</button>
-                    <div class="file-upload-wrapper">
-                        <button id="upload-btn" class="btn">
-                            Upload PDF / Images
-                        </button>
-                        <input
-                            type="file"
-                            id="file-input"
-                            accept="application/pdf,image/*"
-                            multiple
-                        />
-                    </div>
-                </div>
-            </div>
+    /* Card validation status */
+    .card-valid-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .card-valid-badge.valid { background: rgba(63,185,80,0.15); color: #3fb950; }
+    .card-valid-badge.invalid { background: rgba(248,81,73,0.15); color: #f85149; }
 
-            <div class="panel" id="right-panel">
-                <h2>Extracted Details</h2>
+    /* Save/Submit footer */
+    #bottom-bar {
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
 
-                <div id="cards-container">
-                    <!-- Dynamic cards will appear here -->
-                    <p style="color: #666; font-style: italic">
-                        Scan a card or upload a PDF to begin.
-                    </p>
-                </div>
+    #save-status {
+      flex: 1;
+      font-size: 12px;
+    }
 
-                <div class="checkbox-group">
-                    <input type="checkbox" id="chk-create-contact" checked />
-                    <label for="chk-create-contact"
-                        >Create/Upsert Contacts</label
-                    >
-                </div>
+    .upsert-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #8b949e;
+    }
+    .upsert-toggle input { accent-color: #58a6ff; cursor: pointer; }
+    .upsert-toggle label { cursor: pointer; }
 
-                <button id="save-all-btn" class="btn" disabled>
-                    Save All to Database
-                </button>
-                <div id="status-display" class="status-msg"></div>
-            </div>
+    /* Processing overlay */
+    .processing-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      color: #58a6ff;
+      font-size: 14px;
+      z-index: 10;
+    }
+    .processing-overlay.show { display: flex; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+    /* ── IMAGE LIGHTBOX ────────────────────────────── */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      cursor: zoom-out;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 4px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      cursor: default;
+    }
+    .card-img-col img { cursor: zoom-in; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── LEFT PANEL ────────────────────────────────── -->
+  <div id="left-panel">
+    <div id="camera-wrap">
+      <video id="camera-view" autoplay playsinline muted></video>
+      <div id="upload-drop-zone">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+        <p>Drop images or PDFs here<br><strong>or click Upload below</strong></p>
+        <p style="font-size:11px;">One contact card per page/image</p>
+      </div>
+    </div>
+
+    <div id="left-controls">
+      <div class="ctrl-row">
+        <button class="btn btn-upload" id="upload-btn" onclick="document.getElementById('file-input').click()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          Upload Files
+        </button>
+        <button class="btn btn-capture" id="capture-btn" onclick="captureCamera()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M2 6h3l2-3h10l2 3h3a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V8a2 2 0 012-2z"/></svg>
+          Capture
+        </button>
+      </div>
+      <div id="status-bar">
+        <span class="status-idle">Ready. Upload files or capture a card.</span>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" accept="application/pdf,image/*" multiple>
+
+  <!-- ── RIGHT PANEL ───────────────────────────────── -->
+  <div id="right-panel">
+    <div id="right-header">
+      <h2>Extracted Contact Details</h2>
+      <div class="upsert-toggle">
+        <input type="checkbox" id="chk-upsert" checked>
+        <label for="chk-upsert">Upsert contacts in GHL</label>
+      </div>
+    </div>
+
+    <div id="cards-container">
+      <div class="placeholder-msg" id="placeholder">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/>
+        </svg>
+        <p>Scan a card or upload files to begin.<br>Results will appear here.</p>
+      </div>
+    </div>
+
+    <div id="bottom-bar">
+      <div id="save-status" class="status-idle">—</div>
+      <button class="btn btn-save-all" id="save-btn" disabled onclick="saveAll()">
+        Save All to Database
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden canvas for camera capture -->
+<canvas id="process-canvas" style="display:none;"></canvas>
+
+<!-- Image lightbox -->
+<div id="lightbox" onclick="this.classList.remove('open')">
+  <img id="lightbox-img" src="" alt="Card source" onclick="event.stopPropagation()">
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// GLOBALS & CONFIG
+// ══════════════════════════════════════════════════════════════════
+console.log('[Scanner] Initializing...');
+
+const VISION_API = 'https://vision.googleapis.com/v1/images:annotate';
+const GHL_BASE   = 'https://services.leadconnectorhq.com';
+const GHL_VER    = '2021-07-28';
+
+// Allowed card ID charset (ambiguous chars removed; c/v/w/x uppercase-only)
+const CARD_ID_RE = /^[ACEFHJKLMNPQRTUVWXYadefhijkmnoprstuyz347]{12}$/;
+
+// Defaults applied after sparse Gemini parse
+const FIELD_DEFAULTS = {
+  cardId: null, firstName: null, lastName: null, name: null,
+  email: null, phone: null, address1: null, city: null, state: null,
+  postalCode: null, country: null, gender: null, dateOfBirth: null,
+  companyName: null, website: null, timezone: null,
+  dnd: false, tags: [], source: 'ocr-card-scan', customFields: [],
+};
+
+let serviceAccountCreds = null;
+let accessToken    = null;
+let tokenExpiry    = null;
+let locationId     = new URLSearchParams(window.location.search).get('locationID') || '';
+let customFields   = [];  // Location's custom fields from GHL
+let cardDataStore  = [];  // [{imageB64, parsedData}]
+
+// Timezones list (common)
+const TIMEZONES = [
+  '', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Phoenix', 'America/Anchorage', 'Pacific/Honolulu',
+  'America/Toronto', 'America/Vancouver', 'America/Mexico_City', 'America/Chihuahua',
+  'America/Bogota', 'America/Lima', 'America/Sao_Paulo', 'America/Buenos_Aires',
+  'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
+  'Asia/Dubai', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo', 'Asia/Seoul',
+  'Australia/Sydney', 'Pacific/Auckland',
+];
+
+const COUNTRIES = [
+  '', 'US', 'CA', 'GB', 'AU', 'NZ', 'IN', 'DE', 'FR', 'ES', 'IT', 'MX', 'BR', 'AR',
+  'JP', 'KR', 'CN', 'SG', 'AE', 'ZA', 'NG', 'KE', 'PH', 'ID', 'MY', 'TH',
+];
+
+// ══════════════════════════════════════════════════════════════════
+// STATUS HELPERS
+// ══════════════════════════════════════════════════════════════════
+function setStatus(msg, type = 'idle') {
+  console.log(`[Status][${type}] ${msg}`);
+  const bar = document.getElementById('status-bar');
+  const classes = { idle: 'status-idle', processing: 'status-processing', success: 'status-success', error: 'status-error' };
+  bar.innerHTML = type === 'processing'
+    ? `<div class="spinner"></div><span class="${classes[type]}">${msg}</span>`
+    : `<span class="${classes[type]}">${msg}</span>`;
+}
+
+function setSaveStatus(msg, type = 'idle') {
+  const el = document.getElementById('save-status');
+  el.textContent = msg;
+  el.className = 'status-' + type;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CAMERA
+// ══════════════════════════════════════════════════════════════════
+async function initCamera() {
+  try {
+    console.log('[Camera] Requesting camera access...');
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = document.getElementById('camera-view');
+    video.srcObject = stream;
+    // Hide drop zone when camera is active
+    document.getElementById('upload-drop-zone').style.display = 'none';
+    console.log('[Camera] Camera stream active');
+  } catch (err) {
+    console.warn('[Camera] Access denied or unavailable:', err.message);
+    document.getElementById('capture-btn').disabled = true;
+    document.getElementById('capture-btn').title = 'Camera unavailable: ' + err.message;
+  }
+}
+
+function captureCamera() {
+  console.log('[Camera] Capturing frame...');
+  const video = document.getElementById('camera-view');
+  const canvas = document.getElementById('process-canvas');
+  if (!video.srcObject) { alert('Camera not available.'); return; }
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const b64 = canvas.toDataURL('image/jpeg').split(',')[1];
+  console.log('[Camera] Frame captured, running OCR...');
+  runOcrBatch([b64]);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// FILE UPLOAD
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('file-input').addEventListener('change', async e => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  console.log('[Upload] Files selected:', files.map(f => f.name).join(', '));
+  e.target.value = '';
+
+  setStatus(`Processing ${files.length} file(s)…`, 'processing');
+  document.getElementById('upload-btn').disabled = true;
+
+  try {
+    const images = [];
+    for (const file of files) {
+      console.log('[Upload] Processing file:', file.name, file.type);
+      if (file.type === 'application/pdf') {
+        const pdfImgs = await processPdf(file);
+        images.push(...pdfImgs);
+        console.log('[Upload] PDF rendered to', pdfImgs.length, 'page(s):', file.name);
+      } else if (file.type.startsWith('image/')) {
+        const b64 = await fileToB64(file);
+        images.push(b64);
+        console.log('[Upload] Image loaded:', file.name);
+      } else {
+        console.warn('[Upload] Unsupported file type:', file.type, file.name);
+      }
+    }
+
+    if (!images.length) throw new Error('No valid images found in the selected files.');
+    console.log('[Upload] Total images to process:', images.length);
+    await runOcrBatch(images);
+  } catch (err) {
+    console.error('[Upload] Error:', err);
+    setStatus('Error: ' + err.message, 'error');
+  } finally {
+    document.getElementById('upload-btn').disabled = false;
+  }
+});
+
+// Drag & drop
+const dropZone = document.getElementById('upload-drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('active'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('active');
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/') || f.type === 'application/pdf');
+  if (files.length) {
+    const dt = new DataTransfer();
+    files.forEach(f => dt.items.add(f));
+    const input = document.getElementById('file-input');
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change'));
+  }
+});
+
+async function processPdf(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument(buf).promise;
+  const images = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({ scale: 2.0 });
+    // Use a fresh canvas per page to avoid shared-state rendering artifacts
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    images.push(canvas.toDataURL('image/jpeg', 0.92).split(',')[1]);
+  }
+  return images;
+}
+
+function fileToB64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// GOOGLE CLOUD VISION OCR
+// ══════════════════════════════════════════════════════════════════
+async function getVisionToken() {
+  if (accessToken && tokenExpiry && new Date() < tokenExpiry) return accessToken;
+  if (!serviceAccountCreds) throw new Error('Service account credentials not loaded yet.');
+
+  console.log('[Vision] Requesting new access token...');
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const claim = {
+    iss: serviceAccountCreds.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-vision',
+    aud: serviceAccountCreds.token_uri,
+    exp: now + 3600, iat: now,
+  };
+  const jwt = KJUR.jws.JWS.sign('RS256', JSON.stringify(header), JSON.stringify(claim), serviceAccountCreds.private_key);
+  const res = await fetch(serviceAccountCreds.token_uri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  const data = await res.json();
+  accessToken = data.access_token;
+  tokenExpiry = new Date((now + data.expires_in) * 1000);
+  console.log('[Vision] New access token acquired, expires:', tokenExpiry.toISOString());
+  return accessToken;
+}
+
+async function ocrImage(b64, index) {
+  const token = await getVisionToken();
+  console.log(`[Vision] OCR image ${index + 1}...`);
+  const res = await fetch(VISION_API, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({
+      requests: [{
+        image: { content: b64 },
+        features: [{ type: 'TEXT_DETECTION' }],
+        imageContext: { languageHints: ['en'] },
+      }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Vision API error ${res.status} on image ${index + 1}`);
+  const data = await res.json();
+  const text = data.responses[0]?.fullTextAnnotation?.text || '';
+  console.log(`[Vision] OCR image ${index + 1}: ${text.length} chars extracted`);
+  return text;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// GEMINI AI PARSING
+// ══════════════════════════════════════════════════════════════════
+function buildGeminiKey() {
+  function hash(input) {
+    const domain = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const magic = 'jsHashSeed';
+    let ac1 = 0, ac2 = 0;
+    const s = String(input) + typeof input + magic;
+    for (let i = 0; i < s.length; i++) {
+      ac1 = (ac1 << 5) - ac1 + s.charCodeAt(i); ac1 |= 0;
+      ac2 = (ac2 << 5) - ac2 + s.charCodeAt(s.length - 1 - i); ac2 |= 0;
+    }
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+      let m = ac1 ^ (ac2 + i);
+      m ^= m >>> 17; m ^= m >>> 8;
+      result += domain[Math.abs(m) % domain.length];
+      ac1 = ((ac1 << 3) - ac1) ^ ac2; ac1 |= 0;
+      ac2 = ((ac2 << 3) - ac2) ^ ac1; ac2 |= 0;
+    }
+    return result;
+  }
+  const mk = window.location.href.split('#k=')[1];
+  const t = Math.ceil(Date.now() / 10000);
+  return hash(mk + (t - 1)) + hash(mk + t) + hash(mk + (t + 1));
+}
+
+async function callGemini(prompt) {
+  console.log('[Gemini] Sending request, prompt length:', prompt.length);
+  const res = await fetch(
+    'https://us-central1-kairos-test-eedd6.cloudfunctions.net/gemini?flag=ocr-scanner&k=' + buildGeminiKey(),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    }
+  );
+  if (!res.ok) throw new Error(`Gemini API error: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+  console.log('[Gemini] Response received, length:', (data.result || '').length);
+  return data.result;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CUSTOM FIELDS
+// ══════════════════════════════════════════════════════════════════
+async function fetchCustomFields() {
+  if (!locationId || !window.GlobalLocationAccessKey) {
+    console.warn('[CustomFields] Missing locationId or access key');
+    return [];
+  }
+  console.log('[CustomFields] Fetching for location:', locationId);
+  try {
+    const res = await fetch(`${GHL_BASE}/locations/${locationId}/customFields?model=contact`, {
+      headers: {
+        Authorization: `Bearer ${window.GlobalLocationAccessKey}`,
+        Version: GHL_VER,
+        Accept: 'application/json',
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    customFields = (data.customFields || []).filter(f => f.model === 'contact' || !f.model);
+    console.log('[CustomFields] Loaded', customFields.length, 'contact custom fields:', customFields.map(f => f.name));
+    return customFields;
+  } catch (err) {
+    console.error('[CustomFields] Error fetching:', err);
+    return [];
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CARD ID PARSING
+// ══════════════════════════════════════════════════════════════════
+function parseCardId(raw) {
+  if (!raw) return null;
+  raw = raw.trim();
+  if (!raw) return null;
+  if (raw.startsWith('XR')) return raw.slice(2);   // strip XR prefix
+  if (raw.startsWith('ID_')) return raw.slice(3);  // strip ID_ prefix
+  return raw;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MAIN OCR PIPELINE
+// ══════════════════════════════════════════════════════════════════
+async function runOcrBatch(base64Images) {
+  console.log('[OCR] Starting batch for', base64Images.length, 'image(s)');
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('save-btn').disabled = true;
+  cardDataStore = [];
+
+  // Container for loading state
+  const container = document.getElementById('cards-container');
+  container.innerHTML = `<div class="placeholder-msg"><div class="spinner" style="width:32px;height:32px;border-width:3px;"></div><p>Running OCR on ${base64Images.length} image(s)…</p></div>`;
+
+  try {
+    // Step 1: OCR all images in parallel
+    setStatus(`Running OCR on ${base64Images.length} image(s)…`, 'processing');
+    const ocrResults = await Promise.all(base64Images.map((b64, i) => ocrImage(b64, i)));
+
+    // Step 2: Build Gemini prompt with custom fields
+    setStatus('Parsing…', 'processing');
+    container.innerHTML = `<div class="placeholder-msg"><div class="spinner" style="width:32px;height:32px;border-width:3px;"></div><p>Parsing…</p></div>`;
+
+    const customFieldsSchema = customFields.length > 0
+      ? `\nCustom fields for this location (fill with extracted values where possible):\n${customFields.map(f => `  - id: "${f.id}", key: "${f.fieldKey}", name: "${f.name}", type: ${f.dataType}`).join('\n')}`
+      : '';
+
+    const prompt = buildGeminiPrompt(ocrResults, customFieldsSchema);
+    const geminiResult = await callGemini(prompt);
+
+    // Step 3: Parse JSON
+    let parsed;
+    try {
+      const clean = geminiResult.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      parsed = JSON.parse(clean);
+      if (!Array.isArray(parsed)) parsed = [parsed];
+      // Merge sparse Gemini output with field defaults
+      parsed = parsed.map(d => ({ ...FIELD_DEFAULTS, ...d, cardId: parseCardId(d.cardId) }));
+      console.log('[OCR] Parsed', parsed.length, 'card(s) from Gemini');
+    } catch (err) {
+      console.error('[OCR] JSON parse error:', err, 'Raw:', geminiResult.slice(0, 500));
+      throw new Error('AI response was not valid JSON. Raw: ' + geminiResult.slice(0, 200));
+    }
+
+    // Step 4: Render cards
+    cardDataStore = parsed.map((data, i) => ({ data, imageB64: base64Images[i] || base64Images[0] }));
+    renderAllCards();
+    setStatus(`Processed ${base64Images.length} card(s). Review and save.`, 'success');
+    validateAllCards();
+  } catch (err) {
+    console.error('[OCR] Pipeline error:', err);
+    setStatus('Error: ' + err.message, 'error');
+    container.innerHTML = `<div class="placeholder-msg"><p style="color:#f85149;">Error: ${err.message}</p></div>`;
+  }
+}
+
+function buildGeminiPrompt(ocrTexts, customFieldsSchema) {
+  const pageBlocks = ocrTexts.map((t, i) => `=== CARD ${i + 1} ===\n${t}\n=== END CARD ${i + 1} ===`).join('\n\n');
+
+  const cfInstruction = customFields.length > 0
+    ? `\nFor custom fields with values found on the card, include only those with values:\n${customFields.map(f => `  { "id": "${f.id}", "key": "${f.fieldKey}", "field_value": "<value>" }`).join('\n')}`
+    : '';
+
+  return `Extract contact data from ${ocrTexts.length} contact card(s). Return a JSON array with exactly ${ocrTexts.length} objects.
+
+IMPORTANT: Include ONLY fields with non-null values — omit any field that is null, empty, or not found.
+Always include: "source": "ocr-card-scan"
+
+Field names and formats:
+- cardId: raw ID as seen on card (starts with XR or ID_)
+- firstName, lastName, name
+- email
+- phone: E.164 format e.g. +15551234567 (use +1 prefix for US if area code missing)
+- address1, city, state (2-letter), postalCode, country (2-letter)
+- gender: male|female|other
+- dateOfBirth: YYYY-MM-DD
+- companyName: only if explicitly written on card
+- website: full URL with https://
+- timezone: IANA e.g. America/New_York
+- dnd: true only if do-not-disturb is indicated
+- tags: array of strings${cfInstruction}
+
+Card ID note: may start with 'XR' (12 chars) or 'ID_' (8 chars). Return the raw string as seen.
+Return ONLY the raw JSON array. No markdown, no explanation.
+
+OCR DATA:
+${pageBlocks}`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CARD RENDERING
+// ══════════════════════════════════════════════════════════════════
+function renderAllCards() {
+  const container = document.getElementById('cards-container');
+  container.innerHTML = '';
+
+  if (!cardDataStore.length) {
+    container.innerHTML = '<div class="placeholder-msg"><p>No cards extracted.</p></div>';
+    return;
+  }
+
+  cardDataStore.forEach((card, i) => renderCard(card, i, container));
+}
+
+function renderCard({ data, imageB64 }, index, container) {
+  const div = document.createElement('div');
+  div.className = 'card-entry';
+  div.id = `card-${index}`;
+
+  const imgSrc = imageB64 ? `data:image/jpeg;base64,${imageB64}` : '';
+
+  div.innerHTML = `
+    <div class="card-entry-header">
+      <h3>Card ${index + 1}${data.cardId ? ` — ${data.cardId}` : ''}</h3>
+      <span class="card-valid-badge invalid" id="badge-${index}">Validating…</span>
+    </div>
+    <div class="card-entry-body">
+      <!-- Image column -->
+      <div class="card-img-col">
+        ${imgSrc ? `<img src="${imgSrc}" alt="Card ${index + 1}" onclick="openLightbox(this.src)" title="Click to enlarge">` : '<div style="background:#21262d;border-radius:6px;height:180px;display:flex;align-items:center;justify-content:center;color:#6e7681;font-size:12px;">No image</div>'}
+        <div class="card-img-label">Card ${index + 1} source image</div>
+      </div>
+
+      <!-- Form column -->
+      <div class="card-form-col" id="form-${index}">
+        ${buildCardForm(data, index)}
+      </div>
+    </div>
+  `;
+
+  container.appendChild(div);
+  initTagsInput(index, data.tags || []);
+  console.log(`[Render] Card ${index + 1} rendered:`, data);
+}
+
+function buildCardForm(data, idx) {
+  const cf = (customFields.length > 0 ? data.customFields || [] : []);
+  const cfMap = {};
+  cf.forEach(f => { cfMap[f.id] = f.field_value || ''; });
+
+  return `
+  <!-- Core Identity -->
+  <div class="form-section">
+    <div class="form-section-title">Identity</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Card ID <span class="required-star">*</span></label>
+        <input type="text" class="inp-cardId" data-idx="${idx}" value="${esc(data.cardId || '')}" placeholder="e.g. abc123def456" autocomplete="off" maxlength="12"
+          oninput="this.value=this.value.replace(/[cvwx]/g,c=>c.toUpperCase())">
+        <span class="field-error" id="err-cardId-${idx}"></span>
+      </div>
+      <div class="form-group">
+        <label>Source</label>
+        <input type="text" class="inp-source" data-idx="${idx}" value="${esc(data.source || 'ocr-card-scan')}" placeholder="ocr-card-scan">
+      </div>
+      <div class="form-group">
+        <label>First Name</label>
+        <input type="text" class="inp-firstName" data-idx="${idx}" value="${esc(data.firstName || '')}" placeholder="First">
+      </div>
+      <div class="form-group">
+        <label>Last Name</label>
+        <input type="text" class="inp-lastName" data-idx="${idx}" value="${esc(data.lastName || '')}" placeholder="Last">
+      </div>
+    </div>
+    <div class="form-grid single">
+      <div class="form-group">
+        <label>Full Name <span class="required-star">*</span></label>
+        <input type="text" class="inp-name" data-idx="${idx}" value="${esc(data.name || '')}" placeholder="Full Name" required>
+        <span class="field-error" id="err-name-${idx}"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contact Info -->
+  <div class="form-section">
+    <div class="form-section-title">Contact Information</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="text" class="inp-email" data-idx="${idx}" value="${esc(data.email || '')}" placeholder="email@example.com" autocomplete="off">
+        <span class="field-error" id="err-email-${idx}"></span>
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="tel" class="inp-phone" data-idx="${idx}" value="${esc(data.phone || '')}" placeholder="+15550001234" autocomplete="off">
+        <span class="field-error" id="err-phone-${idx}"></span>
+      </div>
+      <div class="form-group">
+        <label>Gender</label>
+        <select class="inp-gender" data-idx="${idx}">
+          <option value="">—</option>
+          <option value="male" ${data.gender === 'male' ? 'selected' : ''}>Male</option>
+          <option value="female" ${data.gender === 'female' ? 'selected' : ''}>Female</option>
+          <option value="other" ${data.gender === 'other' ? 'selected' : ''}>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Date of Birth</label>
+        <input type="text" class="inp-dob" data-idx="${idx}" value="${esc(data.dateOfBirth || '')}" placeholder="YYYY-MM-DD">
+        <span class="field-error" id="err-dob-${idx}"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Address -->
+  <div class="form-section">
+    <div class="form-section-title">Address</div>
+    <div class="form-grid single">
+      <div class="form-group">
+        <label>Street Address</label>
+        <input type="text" class="inp-address1" data-idx="${idx}" value="${esc(data.address1 || '')}" placeholder="123 Main St">
+      </div>
+    </div>
+    <div class="form-grid triple">
+      <div class="form-group">
+        <label>City</label>
+        <input type="text" class="inp-city" data-idx="${idx}" value="${esc(data.city || '')}" placeholder="City">
+      </div>
+      <div class="form-group">
+        <label>State</label>
+        <input type="text" class="inp-state" data-idx="${idx}" value="${esc(data.state || '')}" placeholder="AL" maxlength="2" style="text-transform:uppercase;">
+      </div>
+      <div class="form-group">
+        <label>Postal Code</label>
+        <input type="text" class="inp-postalCode" data-idx="${idx}" value="${esc(data.postalCode || '')}" placeholder="35061">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Country</label>
+        <select class="inp-country" data-idx="${idx}">
+          ${COUNTRIES.map(c => `<option value="${c}" ${data.country === c ? 'selected' : ''}>${c || '—'}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Timezone</label>
+        <select class="inp-timezone" data-idx="${idx}">
+          ${TIMEZONES.map(tz => `<option value="${tz}" ${data.timezone === tz ? 'selected' : ''}>${tz || '—'}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Business -->
+  <div class="form-section">
+    <div class="form-section-title">Business</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Company</label>
+        <input type="text" class="inp-companyName" data-idx="${idx}" value="${esc(data.companyName || '')}" placeholder="Company name">
+      </div>
+      <div class="form-group">
+        <label>Website</label>
+        <input type="url" class="inp-website" data-idx="${idx}" value="${esc(data.website || '')}" placeholder="https://example.com">
+        <span class="field-error" id="err-website-${idx}"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tags -->
+  <div class="form-section">
+    <div class="form-section-title">Tags</div>
+    <div class="form-group">
+      <label>Tags (press Enter to add)</label>
+      <div class="tags-container" id="tags-container-${idx}">
+        <input class="tags-input" id="tags-input-${idx}" placeholder="Add tag…" autocomplete="off">
+      </div>
+      <span class="field-hint">Tags overwrite existing tags in GHL.</span>
+    </div>
+  </div>
+
+  <!-- DND -->
+  <div class="form-section">
+    <div class="form-section-title">Preferences</div>
+    <div class="dnd-row">
+      <input type="checkbox" class="inp-dnd" id="dnd-${idx}" data-idx="${idx}" ${data.dnd ? 'checked' : ''}>
+      <label for="dnd-${idx}">Do Not Disturb (DND)</label>
+    </div>
+  </div>
+
+  ${(() => {
+    const filledFields = customFields.filter(f => cfMap[f.id]);
+    if (!filledFields.length) return '';
+    return `
+  <!-- Custom Fields -->
+  <div class="form-section">
+    <div class="form-section-title">Custom Fields</div>
+    <div class="form-grid">
+      ${filledFields.map(field => `
+        <div class="form-group custom-field-group">
+          <label class="custom-field-label">${esc(field.name)}</label>
+          <span class="custom-field-key">${esc(field.fieldKey)}</span>
+          ${buildCustomFieldInput(field, cfMap[field.id], idx)}
         </div>
-
-        <!-- Hidden canvas for processing -->
-        <canvas id="process-canvas" style="display: none"></canvas>
-
-        <script>
-            // --- DOM Elements ---
-            const video = document.getElementById("camera-view");
-            const canvas = document.getElementById("process-canvas");
-            const captureBtn = document.getElementById("capture-btn");
-            const uploadBtn = document.getElementById("upload-btn"); // Visual button
-            const fileInput = document.getElementById("file-input");
-            const saveBtn = document.getElementById("save-all-btn");
-            const statusDisplay = document.getElementById("status-display");
-            const cardsContainer = document.getElementById("cards-container");
-            const chkCreateContact =
-                document.getElementById("chk-create-contact");
-
-            async function ai(prompt, model, retries, apiKey) {
-                function getK() {
-                    let mk = window.location.href.split("#k=")[1];
-                    let past = hash(mk + (Math.ceil(Date.now() / 10000) - 1));
-                    let now = hash(mk + Math.ceil(Date.now() / 10000));
-                    let future = hash(mk + (Math.ceil(Date.now() / 10000) + 1));
-                    return past + now + future;
-                }
-
-                function hash(input) {
-                    // 62 possibilities, 8 characters long. 62^8 = approx 218 trillion. Good enough for me
-                    const outputDomain =
-                        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-                    const magic = "jsHashSeed"; // pad to ensure minimum length is met (8).
-
-                    // accumulators (backward, forward)
-                    let ac1 = 0;
-                    let ac2 = 0;
-
-                    let s =
-                        String(input) + // stringify input
-                        typeof input + // append type of input (avoid)
-                        magic; // append magic number
-
-                    // djb2-like mixing, two passes
-                    for (let i = 0; i < s.length; i++) {
-                        // mix the characters into the accumulators
-                        ac1 = (ac1 << 5) - ac1 + s.charCodeAt(i);
-                        ac2 = (ac2 << 5) - ac2 + s.charCodeAt(s.length - 1 - i);
-
-                        // coerce to 32-bit integers
-                        ac1 |= 0;
-                        ac2 |= 0;
-                    }
-
-                    // mix accumulators & generate the output
-                    let result = "";
-                    for (let i = 0; i < 8; i++) {
-                        let mixed = ac1 ^ (ac2 + i);
-
-                        // unsigned rightshifts
-                        mixed ^= mixed >>> 17;
-                        mixed ^= mixed >>> 8;
-
-                        // use the value to get an index
-                        const index = Math.abs(mixed) % outputDomain.length;
-                        result += outputDomain[index];
-
-                        // additional hashing rounds on the accumulators
-                        ac1 = ((ac1 << 3) - ac1) ^ ac2;
-                        ac1 |= 0;
-                        ac2 = ((ac2 << 3) - ac2) ^ ac1;
-                        ac2 |= 0;
-                    }
-
-                    return result;
-                }
-                try {
-                    const response = await fetch(
-                        "https://us-central1-kairos-test-eedd6.cloudfunctions.net/gemini?prompt=" +
-                            encodeURIComponent(prompt) +
-                            "&flag=ocr-demo&k=" +
-                            getK(),
-                        {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                            },
-                        },
-                    );
-                    if (!response.ok) {
-                        const errText = await response.text();
-                        throw new Error(
-                            `AI API Error: ${response.status} ${errText}`,
-                        );
-                    }
-                    let res = await response.json();
-                    return res.result;
-                } catch (error) {
-                    console.error("AI Error:", error);
-                    throw error;
-                }
-            }
-
-            // --- Google Cloud Credentials (Vision API) ---
-            let serviceAccountCreds;
-
-            let credsInterval = setInterval(() => {
-                if (window.creds.serviceAccount) {
-                    clearInterval(credsInterval);
-                    serviceAccountCreds = window.creds.serviceAccount;
-                }
-            }, 1000);
-
-            const visionApiEndpoint =
-                "https://vision.googleapis.com/v1/images:annotate";
-            let accessToken = null;
-            let tokenExpiry = null;
-
-            async function getAccessToken() {
-                if (accessToken && tokenExpiry && new Date() < tokenExpiry)
-                    return accessToken;
-                const header = { alg: "RS256", typ: "JWT" };
-                const now = Math.floor(Date.now() / 1000);
-                const claimSet = {
-                    iss: serviceAccountCreds.client_email,
-                    scope: "https://www.googleapis.com/auth/cloud-vision",
-                    aud: serviceAccountCreds.token_uri,
-                    exp: now + 3600,
-                    iat: now,
-                };
-                const signedJWT = KJUR.jws.JWS.sign(
-                    "RS256",
-                    JSON.stringify(header),
-                    JSON.stringify(claimSet),
-                    serviceAccountCreds.private_key,
-                );
-                const response = await fetch(serviceAccountCreds.token_uri, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signedJWT}`,
-                });
-                const data = await response.json();
-                accessToken = data.access_token;
-                tokenExpiry = new Date(now * 1000 + data.expires_in * 1000);
-                return accessToken;
-            }
-
-            // --- Camera & Setup ---
-            async function initCamera() {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: "environment" },
-                    });
-                    video.srcObject = stream;
-                } catch (err) {
-                    console.error("Camera access error:", err);
-                }
-            }
-
-            // --- Processing Logic ---
-            function setProcessing(isProcessing, msg = "Processing...") {
-                captureBtn.disabled = isProcessing;
-                uploadBtn.disabled = isProcessing;
-                fileInput.disabled = isProcessing;
-                saveBtn.disabled = isProcessing;
-
-                // Keep original text when not processing
-                if (!isProcessing) {
-                    captureBtn.textContent = "Capture Camera";
-                    uploadBtn.textContent = "Upload PDF / Images";
-                } else {
-                    captureBtn.textContent = msg;
-                    uploadBtn.textContent = msg;
-                }
-            }
-
-            // 1. Handle File Selection (PDF or Image)
-            fileInput.addEventListener("change", async (e) => {
-                const files = Array.from(e.target.files);
-                if (files.length === 0) return;
-
-                setProcessing(true, "Processing Files...");
-                statusDisplay.style.display = "none";
-                cardsContainer.innerHTML =
-                    '<p style="color:#aaa;">Loading documents...</p>';
-
-                try {
-                    let base64Images = [];
-
-                    for (let file of files) {
-                        if (file.type === "application/pdf") {
-                            const pdfImages = await processPdf(file);
-                            base64Images.push(...pdfImages);
-                        } else if (file.type.startsWith("image/")) {
-                            const imgBase64 = await processImageFile(file);
-                            base64Images.push(imgBase64);
-                        }
-                    }
-
-                    if (base64Images.length === 0)
-                        throw new Error("No valid images found.");
-
-                    await runOcrBatch(base64Images);
-                } catch (err) {
-                    console.error(err);
-                    statusDisplay.textContent = "File Error: " + err.message;
-                    statusDisplay.className = "status-msg status-error";
-                    statusDisplay.style.display = "block";
-                } finally {
-                    setProcessing(false);
-                    // Reset input so change event fires again if same file selected
-                    fileInput.value = "";
-                }
-            });
-
-            // Helper: PDF to Base64 Images
-            async function processPdf(file) {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-                const images = [];
-
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 1.5 }); // Good scale for OCR
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
-                    const ctx = canvas.getContext("2d");
-
-                    await page.render({
-                        canvasContext: ctx,
-                        viewport: viewport,
-                    }).promise;
-                    images.push(canvas.toDataURL("image/jpeg").split(",")[1]);
-                }
-                return images;
-            }
-
-            // Helper: Image File to Base64
-            function processImageFile(file) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        // Strip header for Vision API
-                        const b64 = e.target.result.split(",")[1];
-                        resolve(b64);
-                    };
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                });
-            }
-
-            // 2. Handle Camera Capture
-            captureBtn.addEventListener("click", async () => {
-                setProcessing(true, "Processing Camera...");
-                statusDisplay.style.display = "none";
-
-                try {
-                    const ctx = canvas.getContext("2d");
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
-
-                    await runOcrBatch([base64]);
-                } catch (err) {
-                    console.error(err);
-                    alert("Camera Error: " + err.message);
-                } finally {
-                    setProcessing(false);
-                }
-            });
-
-            // 3. Core Logic: Batch OCR -> Gemini
-            async function runOcrBatch(base64Array) {
-                cardsContainer.innerHTML =
-                    '<p style="color:#2196f3;">Running OCR on ' +
-                    base64Array.length +
-                    " image(s)...</p>";
-
-                const token = await getAccessToken();
-                let fullRawText = "";
-                let endOcrCount = 0;
-
-                for (let i = 0; i < base64Array.length; i++) {
-                    const b64 = base64Array[i];
-
-                    const response = await fetch(visionApiEndpoint, {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                            "Content-Type": "application/json; charset=utf-8",
-                        },
-                        body: JSON.stringify({
-                            requests: [
-                                {
-                                    image: { content: b64 },
-                                    features: [{ type: "TEXT_DETECTION" }],
-                                    imageContext: { languageHints: ["en"] },
-                                },
-                            ],
-                        }),
-                    });
-
-                    if (!response.ok)
-                        throw new Error(
-                            "Vision API failed on image " + (i + 1),
-                        );
-                    const data = await response.json();
-                    const text =
-                        data.responses[0]?.fullTextAnnotation?.text || "";
-
-                    // Append with delimiter
-                    fullRawText += `\n--- PAGE ${i + 1} START ---\n${text}\n[End OCR]\n`;
-                    endOcrCount++;
-                }
-
-                cardsContainer.innerHTML =
-                    '<p style="color:#2196f3;">Parsing data with AI...</p>';
-
-                const prompt = `You are processing OCR raw output from ${endOcrCount} distinct card(s) or page(s).
-            There are exactly ${endOcrCount} occurrences of "[End OCR]" in the text below, signifying the separation of data.
-
-            Task: Extract contact details for EACH card/page into a JSON ARRAY.
-            Schema for each object in array:
-            {
-                "id": "<id or null>",
-                "name": "<name or null>",
-                "phone_number": "<phone or null>",
-                "email": "<email or null>"
-            }
-
-            Raw Data:
-            ${fullRawText}
-
-            Return ONLY the valid JSON Array. Do not wrap in markdown.
-            Ensure phone numbers are formatted in E.164 (+1XXXXXXXXXX).
-            `;
-                const geminiResp = await ai(prompt);
-
-                let parsedArray = [];
-                try {
-                    const cleanJson = geminiResp
-                        .replace(/```json/g, "")
-                        .replace(/```/g, "")
-                        .trim();
-                    parsedArray = JSON.parse(cleanJson);
-                    if (!Array.isArray(parsedArray)) {
-                        parsedArray = [parsedArray];
-                    }
-                } catch (e) {
-                    console.error("JSON Parse Error", e);
-                    throw new Error("AI response was not valid JSON.");
-                }
-
-                // Pass the images down to the renderer
-                renderCards(parsedArray, base64Array);
-            }
-
-            // --- Validation Logic ---
-            function isValidId(val) {
-                const re = /^[a-zA-Z0-9]{8}$/;
-                return re.test(val);
-            }
-
-            function isValidName(val) {
-                return val && val.trim().length > 0;
-            }
-
-            function validateForms() {
-                const cardEntries = document.querySelectorAll(".card-entry");
-                let allCardsValid = true;
-
-                cardEntries.forEach((card) => {
-                    const idInput = card.querySelector(".inp-id");
-                    const nameInput = card.querySelector(".inp-name");
-                    const idValid = isValidId(idInput.value);
-                    const nameValid = isValidName(nameInput.value);
-
-                    idInput.classList.toggle("invalid", !idValid);
-                    nameInput.classList.toggle("invalid", !nameValid);
-
-                    if (!idValid || !nameValid) allCardsValid = false;
-                });
-
-                if (allCardsValid && cardEntries.length > 0) {
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = "Upsert";
-                } else {
-                    saveBtn.disabled = true;
-                    saveBtn.textContent = "Review Data Entries";
-                }
-            }
-
-            // 4. Render Dynamic Forms
-            function renderCards(dataArray, imageArray) {
-                cardsContainer.innerHTML = "";
-                if (!dataArray || dataArray.length === 0) return;
-
-                dataArray.forEach((data, index) => {
-                    // Get corresponding image (assuming 1-to-1 mapping)
-                    const imgBase64 = imageArray[index] || "";
-                    const imgSrc = imgBase64
-                        ? `data:image/jpeg;base64,${imgBase64}`
-                        : "";
-
-                    const div = document.createElement("div");
-                    div.className = "card-entry";
-                    div.innerHTML = `
-                                    <div class="card-entry-header">Card ${index + 1}</div>
-
-                                    <!-- Left Col: Image -->
-                                    <div class="card-image-col">
-                                         ${imgSrc ? `<img src="${imgSrc}" alt="Scanned Card Page ${index + 1}" />` : "<p>No Image</p>"}
-                                    </div>
-
-                                    <!-- Right Col: Form -->
-                                    <div class="card-form-col">
-                                        <div class="form-group">
-                                            <label>Card Unique ID *</label>
-                                            <input type="text" class="inp-id" value="${data.id || ""}" placeholder="8-char ID" autocomplete="off" />
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Full Name *</label>
-                                            <input type="text" class="inp-name" value="${data.name || ""}" placeholder="Full Name" autocomplete="off" />
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Phone Number</label>
-                                            <input type="tel" class="inp-phone" value="${data.phone_number || ""}" placeholder="+15550001234" autocomplete="off" />
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Email Address</label>
-                                            <input type="email" class="inp-email" value="${data.email || ""}" placeholder="email@example.com" autocomplete="off" />
-                                        </div>
-                                    </div>
-                                `;
-                    cardsContainer.appendChild(div);
-                    div.querySelectorAll("input").forEach((input) =>
-                        input.addEventListener("input", validateForms),
-                    );
-                });
-                validateForms();
-            }
-
-            // 5. Save/Upsert Logic
-            saveBtn.addEventListener("click", async () => {
-                if (saveBtn.disabled) return;
-                saveBtn.disabled = true;
-                saveBtn.textContent = "Upserting...";
-                statusDisplay.style.display = "none";
-
-                const entries = document.querySelectorAll(".card-entry");
-                const locationID =
-                    new URLSearchParams(window.location.search).get(
-                        "locationID",
-                    ) || "";
-
-                let successCount = 0;
-                let errorLog = "";
-
-                for (let i = 0; i < entries.length; i++) {
-                    const card = entries[i];
-                    const id = card.querySelector(".inp-id").value.trim();
-                    const name = card.querySelector(".inp-name").value.trim();
-                    const phone = card.querySelector(".inp-phone").value.trim();
-                    const email = card.querySelector(".inp-email").value.trim();
-
-                    try {
-                        let contactID = "";
-                        if (chkCreateContact.checked) {
-                            contactID = await upsertGHLContact(
-                                { name, phone, email },
-                                locationID,
-                            );
-                        }
-
-                        await firestore.collection("cards").doc(id).set(
-                            {
-                                name,
-                                phone,
-                                email,
-                                contactID,
-                                locationID,
-                                added: Date.now(),
-                            },
-                            { merge: true },
-                        );
-                        successCount++;
-                    } catch (e) {
-                        errorLog += `Card ${i + 1}: ${e.message}\n`;
-                    }
-                }
-
-                if (successCount === entries.length) {
-                    statusDisplay.className = "status-msg status-success";
-                    statusDisplay.textContent = `Upserted ${successCount} contacts successfully!`;
-                    saveBtn.textContent = "Upsert Complete";
-                } else {
-                    statusDisplay.className = "status-msg status-error";
-                    statusDisplay.textContent = `Completed ${successCount}/${entries.length}.\nErrors:\n${errorLog}`;
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = "Retry Upsert";
-                }
-                statusDisplay.style.display = "block";
-            });
-
-            // --- GHL Helper Updated for Upsert ---
-            async function upsertGHLContact(contactData, locationID) {
-                const ghlToken = window.GlobalLocationAccessKey;
-                if (!ghlToken || !locationID)
-                    throw new Error("Missing Auth/Location ID");
-
-                const payload = {
-                    locationId: locationID,
-                    name: contactData.name.trim(),
-                    email: contactData.email || undefined,
-                    phone: contactData.phone || undefined,
-                    tags: ["student-card-scan"],
-                    source: "OCR App",
-                };
-
-                const response = await fetch(
-                    "https://services.leadconnectorhq.com/contacts/upsert",
-                    {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${ghlToken}`,
-                            Version: "2021-07-28",
-                            "Content-Type": "application/json",
-                            Accept: "application/json",
-                        },
-                        body: JSON.stringify(payload),
-                    },
-                );
-
-                if (!response.ok) {
-                    const errBody = await response.json().catch(() => ({}));
-                    throw new Error(
-                        `GHL Upsert Failed: ${response.status} ${JSON.stringify(errBody)}`,
-                    );
-                }
-                const result = await response.json();
-                return result.contact?.id;
-            }
-
-            window.addEventListener("load", initCamera);
-        </script>
-    </body>
+      `).join('')}
+    </div>
+  </div>`;
+  })()}
+  `;
+}
+
+function buildCustomFieldInput(field, value, idx) {
+  const cls = `inp-cf-${field.id}`;
+  const dt = field.dataType || 'TEXT';
+  if (dt === 'CHECKBOX' || dt === 'BOOLEAN') {
+    return `<input type="checkbox" class="${cls}" data-field-id="${field.id}" data-idx="${idx}" ${value ? 'checked' : ''} style="width:auto;margin-top:4px;">`;
+  }
+  if (dt === 'LARGE_TEXT' || dt === 'TEXTAREA') {
+    return `<textarea class="${cls}" data-field-id="${field.id}" data-idx="${idx}" rows="2">${esc(value)}</textarea>`;
+  }
+  if (dt === 'DROPDOWN' && field.picklistOptions?.length) {
+    return `<select class="${cls}" data-field-id="${field.id}" data-idx="${idx}">
+      <option value="">—</option>
+      ${field.picklistOptions.map(opt => `<option value="${esc(opt)}" ${value === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}
+    </select>`;
+  }
+  return `<input type="text" class="${cls}" data-field-id="${field.id}" data-idx="${idx}" value="${esc(value)}" placeholder="${esc(field.placeholder || field.name)}">`;
+}
+
+function initTagsInput(idx, initialTags) {
+  const container = document.getElementById(`tags-container-${idx}`);
+  const input = document.getElementById(`tags-input-${idx}`);
+  let tags = [...initialTags];
+
+  function render() {
+    // Remove old chips
+    container.querySelectorAll('.tag-chip').forEach(c => c.remove());
+    tags.forEach((tag, ti) => {
+      const chip = document.createElement('div');
+      chip.className = 'tag-chip';
+      chip.innerHTML = `${esc(tag)}<button type="button" onclick="this.parentElement.remove(); validateCard(${idx})">×</button>`;
+      chip.dataset.tag = tag;
+      container.insertBefore(chip, input);
+    });
+  }
+
+  input.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ',') && input.value.trim()) {
+      e.preventDefault();
+      const tag = input.value.trim().replace(/,/g, '');
+      if (tag && !tags.includes(tag)) {
+        tags.push(tag);
+        render();
+        validateCard(idx);
+      }
+      input.value = '';
+    } else if (e.key === 'Backspace' && !input.value && tags.length) {
+      tags.pop();
+      render();
+    }
+  });
+
+  container.addEventListener('click', () => input.focus());
+  render();
+}
+
+function getTagsForCard(idx) {
+  const container = document.getElementById(`tags-container-${idx}`);
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('.tag-chip')).map(c => c.dataset.tag);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// VALIDATION
+// ══════════════════════════════════════════════════════════════════
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_RE = /^\+[1-9]\d{7,14}$/;
+const DOB_RE   = /^\d{4}-\d{2}-\d{2}$/;
+const URL_RE   = /^https?:\/\/.+\..+/;
+
+function validateCard(idx) {
+  let valid = true;
+
+  function check(selector, errorId, validFn, errorMsg) {
+    const input = document.querySelector(`#card-${idx} ${selector}`);
+    const errEl = document.getElementById(errorId);
+    if (!input) return;
+    const val = input.value.trim();
+    const ok = validFn(val);
+    input.classList.toggle('invalid', !ok && val !== '' ? true : (selector.includes('inp-name') && !ok));
+    input.classList.toggle('valid', ok && val !== '');
+    if (errEl) errEl.textContent = (!ok && (val || selector.includes('inp-name'))) ? errorMsg : '';
+    if (!ok && (val || selector.includes('inp-name'))) valid = false;
+  }
+
+  // Card ID required and must be valid charset, exactly 12 chars
+  const cardIdInput = document.querySelector(`#card-${idx} .inp-cardId`);
+  if (cardIdInput) {
+    const val = cardIdInput.value.trim();
+    const ok = CARD_ID_RE.test(val);
+    cardIdInput.classList.toggle('invalid', !ok);
+    cardIdInput.classList.toggle('valid', ok);
+    const errEl = document.getElementById(`err-cardId-${idx}`);
+    if (errEl) {
+      if (!val) errEl.textContent = 'Card ID is required';
+      else if (val.length !== 12) errEl.textContent = 'Must be exactly 12 characters';
+      else if (!ok) errEl.textContent = 'Contains invalid characters';
+      else errEl.textContent = '';
+    }
+    if (!ok) valid = false;
+  }
+
+  // Name required
+  const nameInput = document.querySelector(`#card-${idx} .inp-name`);
+  if (nameInput) {
+    const ok = nameInput.value.trim().length > 0;
+    nameInput.classList.toggle('invalid', !ok);
+    nameInput.classList.toggle('valid', ok);
+    const errEl = document.getElementById(`err-name-${idx}`);
+    if (errEl) errEl.textContent = ok ? '' : 'Full name is required';
+    if (!ok) valid = false;
+  }
+
+  // Email optional but must be valid if present
+  const emailInput = document.querySelector(`#card-${idx} .inp-email`);
+  if (emailInput && emailInput.value.trim()) {
+    const ok = EMAIL_RE.test(emailInput.value.trim());
+    emailInput.classList.toggle('invalid', !ok);
+    emailInput.classList.toggle('valid', ok);
+    const errEl = document.getElementById(`err-email-${idx}`);
+    if (errEl) errEl.textContent = ok ? '' : 'Invalid email address';
+    if (!ok) valid = false;
+  }
+
+  // Phone optional but must be E.164 if present
+  const phoneInput = document.querySelector(`#card-${idx} .inp-phone`);
+  if (phoneInput && phoneInput.value.trim()) {
+    const val = phoneInput.value.trim();
+    const ok = PHONE_RE.test(val);
+    phoneInput.classList.toggle('invalid', !ok);
+    phoneInput.classList.toggle('valid', ok);
+    const errEl = document.getElementById(`err-phone-${idx}`);
+    if (errEl) errEl.textContent = ok ? '' : 'Phone must be E.164 format (+15551234567)';
+    if (!ok) valid = false;
+  }
+
+  // DOB optional but must be YYYY-MM-DD if present
+  const dobInput = document.querySelector(`#card-${idx} .inp-dob`);
+  if (dobInput && dobInput.value.trim()) {
+    const ok = DOB_RE.test(dobInput.value.trim());
+    dobInput.classList.toggle('invalid', !ok);
+    dobInput.classList.toggle('valid', ok);
+    const errEl = document.getElementById(`err-dob-${idx}`);
+    if (errEl) errEl.textContent = ok ? '' : 'Date must be YYYY-MM-DD';
+    if (!ok) valid = false;
+  }
+
+  // Website optional but must start with http if present
+  const websiteInput = document.querySelector(`#card-${idx} .inp-website`);
+  if (websiteInput && websiteInput.value.trim()) {
+    const ok = URL_RE.test(websiteInput.value.trim());
+    websiteInput.classList.toggle('invalid', !ok);
+    websiteInput.classList.toggle('valid', ok);
+    const errEl = document.getElementById(`err-website-${idx}`);
+    if (errEl) errEl.textContent = ok ? '' : 'Must be a valid URL (https://…)';
+    if (!ok) valid = false;
+  }
+
+  const badge = document.getElementById(`badge-${idx}`);
+  if (badge) {
+    badge.textContent = valid ? 'Valid' : 'Invalid';
+    badge.className = 'card-valid-badge ' + (valid ? 'valid' : 'invalid');
+  }
+
+  console.log(`[Validate] Card ${idx + 1}: ${valid ? 'valid' : 'INVALID'}`);
+  return valid;
+}
+
+function validateAllCards() {
+  let allValid = true;
+  cardDataStore.forEach((_, i) => {
+    if (!validateCard(i)) allValid = false;
+  });
+
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.disabled = !allValid || cardDataStore.length === 0;
+  saveBtn.textContent = allValid && cardDataStore.length > 0
+    ? `Save ${cardDataStore.length} Card(s) to Database`
+    : (cardDataStore.length === 0 ? 'Save All to Database' : 'Fix Validation Errors');
+
+  // Attach live validation listeners
+  document.querySelectorAll('.card-entry input, .card-entry select, .card-entry textarea').forEach(el => {
+    el.removeEventListener('input', onFieldChange);
+    el.removeEventListener('change', onFieldChange);
+    el.addEventListener('input', onFieldChange);
+    el.addEventListener('change', onFieldChange);
+  });
+
+  console.log('[Validate] All cards valid:', allValid);
+  return allValid;
+}
+
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+
+function onFieldChange(e) {
+  // Auto-normalize card ID: force c/v/w/x to uppercase
+  if (e.target.classList.contains('inp-cardId')) {
+    const pos = e.target.selectionStart;
+    e.target.value = e.target.value.replace(/[cvwx]/g, c => c.toUpperCase());
+    e.target.setSelectionRange(pos, pos);
+  }
+  const idx = e.target.dataset.idx;
+  if (idx !== undefined) validateCard(parseInt(idx));
+  // Re-check overall
+  const allValid = cardDataStore.every((_, i) => {
+    const badge = document.getElementById(`badge-${i}`);
+    return badge?.classList.contains('valid');
+  });
+  document.getElementById('save-btn').disabled = !allValid;
+  document.getElementById('save-btn').textContent = allValid
+    ? `Save ${cardDataStore.length} Card(s) to Database`
+    : 'Fix Validation Errors';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DATA EXTRACTION FROM FORM
+// ══════════════════════════════════════════════════════════════════
+function extractCardData(idx) {
+  const g = sel => {
+    const el = document.querySelector(`#card-${idx} ${sel}`);
+    return el ? el.value.trim() : '';
+  };
+  const gBool = sel => {
+    const el = document.querySelector(`#card-${idx} ${sel}`);
+    return el ? el.checked : false;
+  };
+
+  const firstName = g('.inp-firstName');
+  const lastName  = g('.inp-lastName');
+  const fullName  = g('.inp-name') || [firstName, lastName].filter(Boolean).join(' ');
+
+  // Custom fields
+  const customFieldValues = customFields.map(field => {
+    const el = document.querySelector(`#card-${idx} .inp-cf-${field.id}`);
+    if (!el) return null;
+    let val = '';
+    if (el.type === 'checkbox') val = el.checked ? 'true' : '';
+    else val = el.value.trim();
+    return val ? { id: field.id, key: field.fieldKey, field_value: val } : null;
+  }).filter(Boolean);
+
+  const payload = {
+    locationId: locationId || undefined,
+    firstName:  firstName || undefined,
+    lastName:   lastName  || undefined,
+    name:       fullName  || undefined,
+    email:      g('.inp-email')      || undefined,
+    phone:      g('.inp-phone')      || undefined,
+    gender:     g('.inp-gender')     || undefined,
+    dateOfBirth: g('.inp-dob')       || undefined,
+    address1:   g('.inp-address1')   || undefined,
+    city:       g('.inp-city')       || undefined,
+    state:      g('.inp-state').toUpperCase() || undefined,
+    postalCode: g('.inp-postalCode') || undefined,
+    country:    g('.inp-country')    || undefined,
+    timezone:   g('.inp-timezone')   || undefined,
+    companyName: g('.inp-companyName') || undefined,
+    website:    g('.inp-website')    || undefined,
+    dnd:        gBool('.inp-dnd'),
+    tags:       getTagsForCard(idx),
+    source:     g('.inp-source')     || 'ocr-card-scan',
+    customFields: customFieldValues.length ? customFieldValues : undefined,
+    createNewIfDuplicateAllowed: false,
+  };
+
+  // Remove undefined keys
+  Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+  console.log(`[Extract] Card ${idx + 1} payload:`, payload);
+  return payload;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SAVE / UPSERT
+// ══════════════════════════════════════════════════════════════════
+async function saveAll() {
+  if (!validateAllCards()) return;
+
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.disabled = true;
+  const doUpsert = document.getElementById('chk-upsert').checked;
+
+  let successCount = 0;
+  let errors = [];
+
+  setSaveStatus(`Saving ${cardDataStore.length} card(s)…`, 'processing');
+  console.log('[Save] Starting save for', cardDataStore.length, 'card(s). Upsert:', doUpsert);
+
+  for (let i = 0; i < cardDataStore.length; i++) {
+    const cardId = document.querySelector(`#card-${i} .inp-cardId`)?.value.trim() || '';
+    const payload = extractCardData(i);
+
+    try {
+      setSaveStatus(`Saving card ${i + 1}/${cardDataStore.length}…`, 'processing');
+
+      let contactId = '';
+      if (doUpsert && window.GlobalLocationAccessKey && locationId) {
+        console.log(`[Save] Upserting card ${i + 1} to GHL...`);
+        contactId = await upsertContact(payload);
+        console.log(`[Save] GHL upsert success, contactId: ${contactId}`);
+      } else if (doUpsert) {
+        console.warn(`[Save] Skipping GHL upsert for card ${i + 1}: missing auth or locationId`);
+      }
+
+      // Save to Firebase
+      console.log(`[Save] Saving card ${i + 1} to Firebase, cardId: "${cardId || 'no-id'}"`);
+      const fbData = { ...payload, contactId, updatedAt: Date.now() };
+      if (cardId) {
+        await window.firestore.collection('cards').doc(cardId).set(fbData, { merge: true });
+        console.log(`[Save] Firebase card saved: cards/${cardId}`);
+      } else {
+        const ref = await window.firestore.collection('cards').add(fbData);
+        console.log(`[Save] Firebase card created: cards/${ref.id}`);
+      }
+
+      successCount++;
+    } catch (err) {
+      console.error(`[Save] Error on card ${i + 1}:`, err);
+      errors.push(`Card ${i + 1}: ${err.message}`);
+    }
+  }
+
+  if (errors.length === 0) {
+    setSaveStatus(`✓ ${successCount} card(s) saved successfully!`, 'success');
+    saveBtn.textContent = 'Saved!';
+    console.log('[Save] All saved successfully');
+  } else {
+    setSaveStatus(`${successCount}/${cardDataStore.length} saved. Errors: ${errors.join(' | ')}`, 'error');
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Retry Save';
+    console.error('[Save] Completed with errors:', errors);
+  }
+}
+
+async function upsertContact(payload) {
+  const token = window.GlobalLocationAccessKey;
+  if (!token) throw new Error('Missing GHL access token');
+
+  const res = await fetch(`${GHL_BASE}/contacts/upsert`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Version: GHL_VER,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(`GHL upsert failed: ${res.status} ${JSON.stringify(errBody)}`);
+  }
+
+  const data = await res.json();
+  console.log('[GHL] Upsert response:', { new: data.new, contactId: data.contact?.id });
+  return data.contact?.id || '';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// UTILITY
+// ══════════════════════════════════════════════════════════════════
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// INITIALIZATION
+// ══════════════════════════════════════════════════════════════════
+async function init() {
+  console.log('[Init] Card Scanner starting...');
+  console.log('[Init] locationId:', locationId);
+
+  initCamera();
+
+  // Wait for Firebase & credentials
+  const waitInterval = setInterval(async () => {
+    if (window.fbInitialized && window.creds?.serviceAccount) {
+      clearInterval(waitInterval);
+      serviceAccountCreds = window.creds.serviceAccount;
+      console.log('[Init] Firebase + credentials ready, service account:', serviceAccountCreds.client_email);
+
+      // Fetch custom fields if GlobalLocationAccessKey is already available
+      if (locationId && window.GlobalLocationAccessKey) {
+        await fetchCustomFields();
+      } else {
+        console.warn('[Init] Skipping initial custom fields fetch: missing locationId or GlobalLocationAccessKey');
+      }
+
+      setStatus('Ready. Upload files or capture a card.', 'idle');
+    }
+  }, 200);
+
+  // Separate watcher for GlobalLocationAccessKey (may arrive after fbInitialized)
+  let cfFetched = false;
+  const cfInterval = setInterval(async () => {
+    if (!cfFetched && window.GlobalLocationAccessKey) {
+      const lid = locationId || window.GlobalLocationId || '';
+      if (lid) {
+        cfFetched = true;
+        clearInterval(cfInterval);
+        locationId = lid;
+        await fetchCustomFields();
+        if (cardDataStore.length === 0) setStatus('Ready. Upload files or capture a card.', 'idle');
+      }
+    }
+  }, 300);
+  setTimeout(() => clearInterval(cfInterval), 15000);
+
+  // Attach live validation on any form changes
+  document.getElementById('cards-container').addEventListener('input', e => {
+    const idx = e.target.dataset?.idx;
+    if (idx !== undefined) {
+      validateCard(parseInt(idx));
+      const allValid = cardDataStore.every((_, i) => document.getElementById(`badge-${i}`)?.classList.contains('valid'));
+      const saveBtn = document.getElementById('save-btn');
+      saveBtn.disabled = !allValid || cardDataStore.length === 0;
+    }
+  });
+
+  console.log('[Init] Event listeners attached');
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
 </html>
