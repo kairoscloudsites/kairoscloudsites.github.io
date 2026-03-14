@@ -527,7 +527,7 @@ const FIELD_DEFAULTS = {
   email: null, phone: null, address1: null, city: null, state: null,
   postalCode: null, country: null, gender: null, dateOfBirth: null,
   companyName: null, website: null, timezone: null,
-  dnd: false, tags: [], source: 'ocr-card-scan', customFields: [],
+  dnd: false, tags: ['School Contact Scan'], source: 'ocr-card-scan', customFields: [],
 };
 
 let serviceAccountCreds = null;
@@ -895,11 +895,11 @@ Field names and formats:
 - address1, city, state (2-letter), postalCode, country (2-letter)
 - gender: male|female|other
 - dateOfBirth: YYYY-MM-DD
-- companyName: only if explicitly written on card
 - website: full URL with https://
 - timezone: IANA e.g. America/New_York
 - dnd: true only if do-not-disturb is indicated
-- tags: array of strings${cfInstruction}
+- tags: always include "School Contact Scan" plus any additional tags found on the card${cfInstruction}
+- companyName: always omit this field (leave blank)
 
 Card ID note: may start with 'XR' (12 chars) or 'ID_' (8 chars). Return the raw string as seen.
 Return ONLY the raw JSON array. No markdown, no explanation.
